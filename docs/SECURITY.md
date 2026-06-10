@@ -30,6 +30,10 @@ The scanner only fetches public HTTP/HTTPS pages. It does not:
 
 Reports are technical screening aids, not legal determinations. District review should still verify vendor contracts, data privacy agreements, subprocessors, retention, deletion, breach terms, and student data elements.
 
-## AIPC/Ollama Data Flow
+## Teacher Notification Generation Data Flow
 
-When AIPC is configured, the backend sends the structured scan report to the configured endpoint. The report can include public page URLs, detected domains, policy signals, form field names, and cookie names. Do not configure AIPC to send reports to an endpoint you do not trust.
+When AIPC/Ollama is configured, the backend sends the structured scan report to the configured endpoint to generate a teacher-ready email explanation. The report can include public page URLs, detected domains, policy signals, form field names, and cookie names. Do not configure this feature to send reports to an endpoint you do not trust.
+
+## FERPA Considerations
+
+The app flags FERPA-related review issues when a site may collect student PII, uses third-party processors, or includes policy language related to advertising, sale/share, or secondary use. These flags support district review; they do not replace legal counsel or district approval workflows.

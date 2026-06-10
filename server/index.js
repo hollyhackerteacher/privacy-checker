@@ -72,6 +72,14 @@ const UTAH_REFERENCES = [
   {
     label: "Utah Code 53E-9-301",
     url: "https://le.utah.gov/xcode/Title53E/Chapter9/53E-9-S301.html"
+  },
+  {
+    label: "FERPA Regulations - 34 CFR Part 99",
+    url: "https://studentprivacy.ed.gov/ferpa"
+  },
+  {
+    label: "FERPA School Official Exception",
+    url: "https://studentprivacy.ed.gov/faq/who-school-official-under-ferpa"
   }
 ];
 
@@ -223,6 +231,7 @@ async function buildReport({ targetUrl, startedAt, scan }) {
   const thirdParties = classifyThirdParties(resourceUrls, firstPartyDomain);
   const scores = scoreFindings({ thirdParties, cookieHeaders, storageSignals, privacyLinks, forms, policySignals, securityHeaders });
   const findings = buildFindings({ thirdParties, cookieHeaders, storageSignals, privacyLinks, forms, policySignals, securityHeaders, pagesScanned });
+  const highLevelSummary = buildHighLevelSummary({ scores, thirdParties, cookieHeaders, storageSignals, privacyLinks, forms, policySignals, securityHeaders });
 
   const report = {
     scannedAt: startedAt,
@@ -258,8 +267,10 @@ async function buildReport({ targetUrl, startedAt, scan }) {
     forms,
     policySignals,
     securityHeaders,
+    highLevelSummary,
     findings,
     utahReview: buildUtahNotes({ thirdParties, cookieHeaders, storageSignals, privacyLinks, forms, policySignals }),
+    ferpaConsiderations: buildFerpaConsiderations({ thirdParties, forms, policySignals }),
     references: UTAH_REFERENCES,
     limitations: [
       `This is a bounded public scan of up to ${scan.pageLimit} public pages.`,
@@ -268,7 +279,7 @@ async function buildReport({ targetUrl, startedAt, scan }) {
     ]
   };
 
-  report.aipcEvaluation = await evaluateWithAipc(report);
+  report.teacherNotification = await createTeacherNotification(report);
   return report;
 }
 
@@ -390,6 +401,15 @@ function classifyDomain(hostname) {
   return "Third-party resource";
 }
 
+function classifyCookiePurpose(cookie) {
+  const name = cookie.name.toLowerCase();
+  if (/^_ga|^_gid|^_gat|fbp|fbc|gcl|doubleclick|ad|track|pixel|mkto|hubspot|intercom|ajs|amplitude|mixpanel/.test(name)) {
+    return "Advertising / analytics";
+  }
+  if (/session|csrf|xsrf|auth|token|login/.test(name)) return "Necessary or account";
+  return "Unknown";
+}
+
 function getSetCookieHeaders(response) {
   if (typeof response.headers.getSetCookie === "function") {
     return response.headers.getSetCookie();
@@ -402,13 +422,15 @@ function getSetCookieHeaders(response) {
 function parseCookieHeader(header, pageUrl = "") {
   const [nameValue, ...attributes] = header.split(";").map((part) => part.trim());
   const [name] = nameValue.split("=");
-  return {
+  const cookie = {
     name: name || "unnamed",
     pageUrl,
     secure: attributes.some((attr) => /^secure$/i.test(attr)),
     httpOnly: attributes.some((attr) => /^httponly$/i.test(attr)),
     sameSite: attributes.find((attr) => /^samesite=/i.test(attr))?.split("=")[1] || "Not declared"
   };
+  cookie.purpose = classifyCookiePurpose(cookie);
+  return cookie;
 }
 
 function detectStorageSignals(html) {
@@ -570,15 +592,19 @@ function buildFindings({ thirdParties, cookieHeaders, storageSignals, privacyLin
     severity: "Low",
     area: "Scan depth",
     evidence: `${pagesScanned.length} public page(s) scanned: ${pagesScanned.map((page) => page.title).join(", ")}`,
-    action: "Use the scanned page list to confirm whether the site requires login or has additional student-facing flows."
+    action: "The conclusion is based on public pages only. A login-only student workflow may change the ruling."
   });
 
   if (cookieHeaders.length) {
+    const parsedCookies = cookieHeaders.map((header) => parseCookieHeader(header));
+    const adCookieCount = parsedCookies.filter((cookie) => cookie.purpose === "Advertising / analytics").length;
     rows.push({
-      severity: "Review",
+      severity: adCookieCount ? "High" : "Review",
       area: "Cookies",
       evidence: `${cookieHeaders.length} Set-Cookie header(s) observed on the public page.`,
-      action: "Confirm purpose, duration, consent needs, and whether cookies are used for student tracking."
+      action: adCookieCount
+        ? "Advertising or analytics cookies are not appropriate for student use unless a written agreement prohibits targeted advertising, profiling, and secondary use."
+        : "Cookies appear present but not clearly advertising-related from their names; approval still depends on purpose, retention, and vendor agreement language."
     });
   }
 
@@ -587,7 +613,7 @@ function buildFindings({ thirdParties, cookieHeaders, storageSignals, privacyLin
       severity: "High",
       area: "Advertising / analytics",
       evidence: thirdParties.advertisers.map((item) => item.domain).join(", "),
-      action: "Verify the vendor does not use student data for targeted advertising or unrelated profiling."
+      action: "Advertising or cross-site analytics trackers are a denial-level concern for K-12 use unless a signed agreement blocks targeted advertising, profiling, sale/share, and reuse of student data."
     });
   }
 
@@ -596,7 +622,7 @@ function buildFindings({ thirdParties, cookieHeaders, storageSignals, privacyLin
       severity: "Review",
       area: "Third-party processors",
       evidence: thirdParties.processors.map((item) => item.domain).join(", "),
-      action: "Check data privacy agreement coverage, subprocessors, security terms, and breach notification language."
+      action: "These subprocessors require written coverage in the vendor agreement or DPA before student use should be approved."
     });
   }
 
@@ -605,7 +631,7 @@ function buildFindings({ thirdParties, cookieHeaders, storageSignals, privacyLin
       severity: "Review",
       area: "Browser storage",
       evidence: storageSignals.map((item) => item.label).join(", "),
-      action: "Confirm what student or device data is stored locally and whether it persists after sign-out."
+      action: "Persistent browser storage can create student or device identifiers; approve only if the vendor terms limit use to the educational purpose."
     });
   }
 
@@ -615,7 +641,7 @@ function buildFindings({ thirdParties, cookieHeaders, storageSignals, privacyLin
       severity: "Review",
       area: "Forms and data entry",
       evidence: `${sensitiveForms.length} form(s) include fields that may collect student, parent, account, or contact data.`,
-      action: "Confirm what each form collects, whether students use it, and whether submitted data is covered by a DPA."
+      action: "If students enter names, email, school, login, or similar information, FERPA and Utah student-data review should be completed before approval."
     });
   }
 
@@ -625,7 +651,9 @@ function buildFindings({ thirdParties, cookieHeaders, storageSignals, privacyLin
       severity: policySignals.some((signal) => ["targetedAdvertising", "sellShare"].includes(signal.key)) ? "High" : "Review",
       area: "Policy language",
       evidence: policyLabels.join(", "),
-      action: "Read the linked policies for student-specific terms, advertising limits, retention, deletion, subprocessors, and Utah applicability."
+      action: policySignals.some((signal) => ["targetedAdvertising", "sellShare"].includes(signal.key))
+        ? "Policy language suggests advertising or sale/share concepts; do not approve for student use without explicit contractual limits."
+        : "Policy terms were detected, but approval depends on whether they specifically cover student data, FERPA use limits, retention, deletion, and subprocessors."
     });
   }
 
@@ -637,7 +665,7 @@ function buildFindings({ thirdParties, cookieHeaders, storageSignals, privacyLin
         !securityHeaders.contentSecurityPolicy ? "Content-Security-Policy missing" : "",
         !securityHeaders.strictTransportSecurity ? "Strict-Transport-Security missing" : ""
       ].filter(Boolean).join(", "),
-      action: "Ask the vendor about browser security controls and whether production pages enforce HTTPS and script restrictions."
+      action: "Missing browser security headers do not automatically block approval, but they lower confidence and justify a technical security review."
     });
   }
 
@@ -646,7 +674,7 @@ function buildFindings({ thirdParties, cookieHeaders, storageSignals, privacyLin
       severity: "Review",
       area: "Public documentation",
       evidence: "No privacy or data policy link was detected on the scanned page.",
-      action: "Request vendor privacy policy, student data terms, and DPA before classroom adoption."
+      action: "Do not approve for classroom use until a privacy policy, student data terms, and district agreement are available."
     });
   }
 
@@ -658,6 +686,118 @@ function buildFindings({ thirdParties, cookieHeaders, storageSignals, privacyLin
       action: "Continue with contract, DPA, and classroom workflow review."
     }
   ];
+}
+
+function buildHighLevelSummary({ scores, thirdParties, cookieHeaders, storageSignals, privacyLinks, forms, policySignals, securityHeaders }) {
+  const cookies = cookieHeaders.map((header) => parseCookieHeader(header));
+  const adCookies = cookies.filter((cookie) => cookie.purpose === "Advertising / analytics");
+  const sensitiveForms = forms.filter((form) => form.sensitiveFieldCount > 0);
+  const concerning = [];
+  const likelyViolationWithoutAgreement = [];
+  const requiresDetailedReview = [];
+
+  if (thirdParties.advertisers.length) {
+    likelyViolationWithoutAgreement.push(
+      `Advertising or analytics tracker domains were detected (${thirdParties.advertisers.map((item) => item.domain).join(", ")}). For K-12 use, this should be treated as not approved unless a written agreement prohibits targeted advertising, profiling, sale/share, and secondary use of student data.`
+    );
+  }
+
+  if (adCookies.length) {
+    likelyViolationWithoutAgreement.push(
+      `Advertising or analytics-style cookies were detected (${adCookies.map((cookie) => cookie.name).join(", ")}). These are a denial-level concern without contract language limiting them to the educational purpose.`
+    );
+  }
+
+  if (!privacyLinks.length) {
+    likelyViolationWithoutAgreement.push(
+      "No public privacy or student-data policy link was detected. Without written privacy terms or a DPA, the site should not be approved for student data use."
+    );
+  }
+
+  if (sensitiveForms.length) {
+    requiresDetailedReview.push(
+      `${sensitiveForms.length} public form(s) appear to collect account, student, parent, or contact data. This triggers FERPA/Utah review before a ruling.`
+    );
+  }
+
+  if (thirdParties.processors.length) {
+    requiresDetailedReview.push(
+      `Third-party processors were detected (${thirdParties.processors.map((item) => item.domain).join(", ")}). These need to be covered as service providers/subprocessors in the vendor agreement.`
+    );
+  }
+
+  if (storageSignals.length) {
+    concerning.push(
+      `Browser storage signals were detected (${storageSignals.map((item) => item.label).join(", ")}), which may create persistent student or device identifiers.`
+    );
+  }
+
+  if (policySignals.some((signal) => signal.key === "targetedAdvertising")) {
+    likelyViolationWithoutAgreement.push(
+      "Policy language references targeted or behavioral advertising. This is not acceptable for student use without explicit student-data restrictions."
+    );
+  }
+
+  if (policySignals.some((signal) => signal.key === "sellShare")) {
+    likelyViolationWithoutAgreement.push(
+      "Policy language references selling or sharing personal information. This requires denial or legal review unless student data is clearly excluded by agreement."
+    );
+  }
+
+  if (!policySignals.some((signal) => signal.key === "retention")) {
+    requiresDetailedReview.push("No data retention/deletion language was detected in the scanned public pages.");
+  }
+
+  if (!securityHeaders.contentSecurityPolicy || !securityHeaders.strictTransportSecurity) {
+    concerning.push("One or more baseline browser security headers were missing.");
+  }
+
+  const decision = decideApproval({ scores, likelyViolationWithoutAgreement, requiresDetailedReview });
+
+  return {
+    rating: decision.rating,
+    decision: decision.decision,
+    score: scores.score,
+    summary: decision.summary,
+    concerning,
+    likelyViolationWithoutAgreement,
+    requiresDetailedReview
+  };
+}
+
+function decideApproval({ scores, likelyViolationWithoutAgreement, requiresDetailedReview }) {
+  if (likelyViolationWithoutAgreement.length) {
+    return {
+      rating: "Not approved baseline",
+      decision: "Deny until agreement fixes concerns",
+      summary:
+        "The scan found advertising, policy, or missing-documentation signals that should block classroom use unless a district-approved agreement resolves them."
+    };
+  }
+
+  if (scores.score < 60) {
+    return {
+      rating: "High risk",
+      decision: "Do not approve",
+      summary: "The site has multiple technical or documentation issues that make it unsuitable for student use at this stage."
+    };
+  }
+
+  if (requiresDetailedReview.length || scores.score < 82) {
+    return {
+      rating: "Review required",
+      decision: "Hold for detailed review",
+      summary:
+        "The scan did not prove a denial-level advertising issue, but it found data collection, processor, policy, or contract questions that require review before approval."
+    };
+  }
+
+  return {
+    rating: "Low risk baseline",
+    decision: "Approval likely",
+    summary:
+      "The public scan did not detect advertising trackers, sensitive public forms, or missing core documentation signals. Final approval still depends on district agreement requirements."
+  };
 }
 
 function buildUtahNotes({ thirdParties, cookieHeaders, storageSignals, privacyLinks, forms, policySignals }) {
@@ -701,12 +841,36 @@ function buildUtahNotes({ thirdParties, cookieHeaders, storageSignals, privacyLi
   ];
 }
 
-async function evaluateWithAipc(report) {
+function buildFerpaConsiderations({ thirdParties, forms, policySignals }) {
+  return [
+    {
+      label: "Education records and student PII",
+      status: forms.some((form) => form.sensitiveFieldCount > 0) ? "Possible student PII collection" : "No public form PII signal",
+      detail:
+        "If the site receives student names, emails, grades, assignments, login identifiers, or other education-record information, FERPA restrictions may apply."
+    },
+    {
+      label: "School official exception",
+      status: thirdParties.processors.length ? "Agreement needed" : "No processor signal",
+      detail:
+        "For outsourced services, FERPA generally requires the provider to perform an institutional service, be under school or district direct control for the data, and use PII only for the disclosed educational purpose."
+    },
+    {
+      label: "Redisclosure and secondary use",
+      status: policySignals.some((signal) => ["targetedAdvertising", "sellShare"].includes(signal.key)) ? "High concern" : "No public ad-sale policy signal",
+      detail:
+        "Student PII should not be reused, redisclosed, sold, or used for targeted advertising unless a valid exception and agreement clearly allows the use."
+    }
+  ];
+}
+
+async function createTeacherNotification(report) {
   const endpoint = process.env.AIPC_ENDPOINT || process.env.OLLAMA_BASE_URL;
   if (!endpoint) {
     return {
       status: "Not configured",
-      summary: "Set AIPC_ENDPOINT or OLLAMA_BASE_URL on the server to enable AI privacy evaluation."
+      summary: "Set AIPC_ENDPOINT or OLLAMA_BASE_URL on the server to generate teacher notification emails.",
+      email: buildFallbackTeacherEmail(report)
     };
   }
 
@@ -728,23 +892,26 @@ async function evaluateWithAipc(report) {
     if (!response.ok) {
       return {
         status: "Error",
-        summary: `AIPC returned HTTP ${response.status}.`,
-        result
+        summary: `Teacher notification generation returned HTTP ${response.status}.`,
+        email: buildFallbackTeacherEmail(report),
+        raw: result
       };
     }
 
     return {
       status: "Completed",
-      summary: "AIPC evaluation completed.",
-      result
+      summary: "Teacher notification email generated.",
+      email: extractGeneratedEmail(result),
+      raw: result
     };
   } catch (error) {
     return {
       status: "Error",
       summary:
         error.name === "AbortError"
-          ? "AIPC evaluation timed out."
-          : error.message || "AIPC evaluation failed."
+          ? "Teacher notification generation timed out."
+          : error.message || "Teacher notification generation failed.",
+      email: buildFallbackTeacherEmail(report)
     };
   } finally {
     clearTimeout(timeout);
@@ -768,6 +935,8 @@ function buildAipcPayload(report) {
     forms: report.forms,
     policySignals: report.policySignals,
     securityHeaders: report.securityHeaders,
+    highLevelSummary: report.highLevelSummary,
+    ferpaConsiderations: report.ferpaConsiderations,
     findings: report.findings,
     utahReview: report.utahReview,
     references: report.references
@@ -782,9 +951,11 @@ function buildAipcRequest(endpoint, report) {
     ...(process.env.AIPC_API_KEY ? { authorization: `Bearer ${process.env.AIPC_API_KEY}` } : {})
   };
   const prompt = [
-    "Evaluate this website privacy scan for Utah K-12 school use.",
-    "Focus on cookies, advertising/analytics trackers, third-party processors, student data risk, DPA review needs, and teacher/IT director recommendations.",
-    "Return a concise report with: overall assessment, key concerns, questions for the vendor, and recommended decision.",
+    "Write a copy-paste email to a teacher explaining whether this website is approved, denied, or held for review for Utah K-12 classroom use.",
+    "Use the high-level summary decision as the ruling. Include FERPA considerations where relevant.",
+    "Be direct. Make reasonable conclusions from advertising trackers, advertising cookies, policy language, missing privacy terms, forms, and third-party processors.",
+    "Do not call it an AIPC result. Do not overuse 'check into this'. Use plain language suitable for a teacher notification.",
+    "Format with Subject, decision, short reason, and next steps.",
     JSON.stringify(buildAipcPayload(report), null, 2)
   ].join("\n\n");
 
@@ -799,7 +970,7 @@ function buildAipcRequest(endpoint, report) {
           {
             role: "system",
             content:
-              "You are a K-12 student-data privacy reviewer. Be practical, cautious, and concise. Do not claim legal compliance; identify review risks and next steps."
+              "You are a K-12 student-data privacy reviewer writing a teacher notification email. Be practical, cautious, and concise. Do not claim to provide legal advice, but do make a clear approval, denial, or review-needed recommendation."
           },
           { role: "user", content: prompt }
         ]
@@ -811,10 +982,41 @@ function buildAipcRequest(endpoint, report) {
     url,
     headers,
     body: {
-      task: "utah_k12_privacy_evaluation",
+      task: "utah_k12_teacher_privacy_notification",
       instructions:
-        "Evaluate the scanned website data for Utah K-12 privacy review. Focus on cookies, advertising, third-party processors, student data risk, DPA review needs, and teacher/IT director recommendations.",
+        "Write a copy-paste teacher notification email for Utah K-12 privacy review. Include FERPA considerations, decision, score, reasons, and next steps.",
       scannedData: buildAipcPayload(report)
     }
   };
+}
+
+function extractGeneratedEmail(result) {
+  if (!result) return "";
+  if (typeof result === "string") return result;
+  return result.message?.content || result.email || result.summary || JSON.stringify(result, null, 2);
+}
+
+function buildFallbackTeacherEmail(report) {
+  const summary = report.highLevelSummary;
+  const concerns = [
+    ...summary.likelyViolationWithoutAgreement,
+    ...summary.requiresDetailedReview,
+    ...summary.concerning
+  ].slice(0, 4);
+
+  return [
+    `Subject: Website Privacy Review - ${report.pageTitle}`,
+    "",
+    `Decision: ${summary.decision}`,
+    `Baseline rating: ${summary.rating} (${summary.score}/100)`,
+    "",
+    `I reviewed ${report.finalUrl} for Utah K-12 privacy concerns. ${summary.summary}`,
+    "",
+    concerns.length ? "Key reasons:" : "Key reasons: No denial-level public-page signals were detected.",
+    ...concerns.map((concern) => `- ${concern}`),
+    "",
+    "FERPA note: if the site receives student education-record information or student PII, vendor use should be limited to the educational purpose and covered by district-approved agreement terms before classroom use.",
+    "",
+    "This is a technical screening result, not legal advice. Final approval depends on district policy and any required vendor agreement."
+  ].join("\n");
 }

@@ -29,6 +29,20 @@ const sampleReport = {
     score: 74,
     counts: { cookies: 2, advertisers: 1, processors: 3, otherThirdParties: 1 }
   },
+  highLevelSummary: {
+    rating: "Not approved baseline",
+    decision: "Deny until agreement fixes concerns",
+    score: 74,
+    summary:
+      "The scan found advertising and processor signals that should block classroom use unless a district-approved agreement resolves them.",
+    concerning: ["Browser storage may create persistent student or device identifiers."],
+    likelyViolationWithoutAgreement: [
+      "Advertising or analytics tracker domains were detected. For K-12 use, this should be treated as not approved unless a written agreement prohibits targeted advertising, profiling, sale/share, and secondary use of student data."
+    ],
+    requiresDetailedReview: [
+      "Public forms appear to collect account or contact data. This triggers FERPA/Utah review before a ruling."
+    ]
+  },
   categories: [
     { label: "Pages scanned", count: 4, status: "Deep scan" },
     { label: "Cookies", count: 2, status: "Review" },
@@ -120,15 +134,31 @@ const sampleReport = {
         "Attach vendor privacy policy, student data privacy terms, DPA status, and district approval evidence to the final evaluation."
     }
   ],
+  ferpaConsiderations: [
+    {
+      label: "Education records and student PII",
+      status: "Possible student PII collection",
+      detail:
+        "If the site receives student names, emails, grades, assignments, login identifiers, or other education-record information, FERPA restrictions may apply."
+    },
+    {
+      label: "School official exception",
+      status: "Agreement needed",
+      detail:
+        "For outsourced services, FERPA generally requires the provider to perform an institutional service, be under school or district direct control for the data, and use PII only for the disclosed educational purpose."
+    }
+  ],
   references: [
     { label: "USBE Student Data Privacy", url: "https://schools.utah.gov/studentdataprivacy/index.php" },
     { label: "USBE Laws & Policies", url: "https://schools.utah.gov/studentdataprivacy/laws.php" },
     { label: "Board Rule R277-487", url: "https://schools.utah.gov/adminrules/R277-487.php" },
     { label: "Utah Code 53E-9-301", url: "https://le.utah.gov/xcode/Title53E/Chapter9/53E-9-S301.html" }
   ],
-  aipcEvaluation: {
+  teacherNotification: {
     status: "Not configured",
-    summary: "Set AIPC_ENDPOINT or OLLAMA_BASE_URL on the server to enable AI privacy evaluation."
+    summary: "Set AIPC_ENDPOINT or OLLAMA_BASE_URL on the server to generate teacher notification emails.",
+    email:
+      "Subject: Website Privacy Review - Example Learning Site\n\nDecision: Deny until agreement fixes concerns\nBaseline rating: Not approved baseline (74/100)\n\nI reviewed this site for Utah K-12 privacy concerns. Advertising trackers and third-party processors were detected, so this should not be approved for student use unless a district-approved agreement resolves those concerns."
   },
   limitations: [
     "This is a first-pass technical scan of the public page only.",
@@ -260,6 +290,14 @@ function App() {
             ))}
           </div>
 
+          <section className="report-section summary-section">
+            <div className="section-title">
+              <ShieldCheck size={18} />
+              <h2>High Level Summary</h2>
+            </div>
+            <HighLevelSummary summary={report.highLevelSummary} />
+          </section>
+
           <section className="report-section deep-evidence">
             <div className="section-title">
               <ClipboardCheck size={18} />
@@ -278,7 +316,7 @@ function App() {
                 <span>Severity</span>
                 <span>Area</span>
                 <span>Evidence</span>
-                <span>Recommended action</span>
+                <span>Conclusion</span>
               </div>
               {report.findings.map((finding, index) => (
                 <div className="table-row" key={`${finding.area}-${index}`}>
@@ -295,10 +333,10 @@ function App() {
             <div className="report-section">
               <div className="section-title">
                 <UsersRound size={18} />
-                <h2>Utah K-12 Review Notes</h2>
+                <h2>Utah K-12 and FERPA Notes</h2>
               </div>
               <div className="note-list">
-                {report.utahReview.map((note) => (
+                {[...(report.utahReview || []), ...(report.ferpaConsiderations || [])].map((note) => (
                   <article key={note.label}>
                     <div>
                       <strong>{note.label}</strong>
@@ -323,10 +361,10 @@ function App() {
 
           <section className="report-section aipc-section">
             <div className="section-title">
-              <ShieldCheck size={18} />
-              <h2>AIPC Evaluation</h2>
+              <FileText size={18} />
+              <h2>Summarized Email Explanation</h2>
             </div>
-            <AipcEvaluation evaluation={report.aipcEvaluation} />
+            <TeacherNotification notification={report.teacherNotification} />
           </section>
 
           <section className="limitations">
@@ -392,22 +430,6 @@ function CookieList({ cookies }) {
   );
 }
 
-function AipcEvaluation({ evaluation }) {
-  if (!evaluation) return <p className="aipc-text">AIPC evaluation was not returned.</p>;
-
-  const result = formatAipcResult(evaluation.result);
-
-  return (
-    <div className="aipc-card">
-      <div>
-        <strong>{evaluation.status}</strong>
-        <span>{evaluation.summary}</span>
-      </div>
-      {result && <pre>{result}</pre>}
-    </div>
-  );
-}
-
 function DeepEvidence({ report }) {
   return (
     <div className="evidence-grid">
@@ -418,6 +440,57 @@ function DeepEvidence({ report }) {
         title="Security headers"
         items={Object.entries(report.securityHeaders || {}).map(([key, value]) => `${headerLabel(key)}: ${value ? "present" : "missing"}`)}
       />
+    </div>
+  );
+}
+
+function HighLevelSummary({ summary }) {
+  if (!summary) return <p className="aipc-text">No high-level summary was returned.</p>;
+
+  return (
+    <div className="summary-grid">
+      <div className="summary-ruling">
+        <span>Overall rating</span>
+        <strong>{summary.rating}</strong>
+        <em>{summary.score}/100 · {summary.decision}</em>
+        <p>{summary.summary}</p>
+      </div>
+      <SummaryList title="Concerning" items={summary.concerning} empty="No separate concerning signals detected" />
+      <SummaryList title="Likely Violation Without Agreement" items={summary.likelyViolationWithoutAgreement} empty="No denial-level public signal detected" />
+      <SummaryList title="Needs Detailed Review" items={summary.requiresDetailedReview} empty="No detailed-review item detected" />
+    </div>
+  );
+}
+
+function SummaryList({ title, items = [], empty }) {
+  return (
+    <div className="summary-list">
+      <strong>{title}</strong>
+      {(items.length ? items : [empty]).slice(0, 5).map((item) => <span key={item}>{item}</span>)}
+    </div>
+  );
+}
+
+function TeacherNotification({ notification }) {
+  const text = notification?.email || "";
+
+  async function copyEmail() {
+    if (!text) return;
+    await navigator.clipboard.writeText(text);
+  }
+
+  return (
+    <div className="aipc-card">
+      <div className="email-header">
+        <div>
+          <strong>{notification?.status || "Not generated"}</strong>
+          <span>{notification?.summary || "No teacher notification was returned."}</span>
+        </div>
+        <button className="secondary-button" onClick={copyEmail} disabled={!text}>
+          Copy Email
+        </button>
+      </div>
+      {text && <pre>{text}</pre>}
     </div>
   );
 }
@@ -435,13 +508,6 @@ function headerLabel(key) {
   return key
     .replace(/([A-Z])/g, " $1")
     .replace(/^./, (letter) => letter.toUpperCase());
-}
-
-function formatAipcResult(result) {
-  if (!result) return "";
-  if (typeof result === "string") return result;
-  if (result.message?.content) return result.message.content;
-  return JSON.stringify(result, null, 2);
 }
 
 createRoot(document.getElementById("root")).render(<App />);

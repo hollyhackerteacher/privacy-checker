@@ -9,8 +9,8 @@ The app is a React/Vite frontend served by a small Express backend.
 3. The backend fetches the public page, then follows a bounded set of relevant same-site links.
 4. The scanner extracts cookies, resource domains, forms, storage signals, policy terms, security headers, and privacy links.
 5. The backend builds a structured report.
-6. If configured, the report is sent to AIPC/Ollama for a K-12 privacy review summary.
-7. The frontend renders the technical evidence, Utah review notes, and AIPC evaluation.
+6. If configured, the report is sent to AIPC/Ollama to generate a copy-paste teacher notification email.
+7. The frontend renders the technical evidence, high-level ruling, Utah/FERPA notes, and teacher notification email.
 
 ## Important Files
 
@@ -33,3 +33,11 @@ Default limits:
 - `AIPC_TIMEOUT_MS=30000`
 
 These can be changed with environment variables.
+
+## Report Sections
+
+- High Level Summary: overall score, rating, and approval/denial/review-needed ruling.
+- Likely Violation Without Agreement: denial-level concerns such as advertising trackers, advertising cookies, missing privacy documentation, or sale/share language.
+- Needs Detailed Review: items that may be approvable only after DPA, contract, FERPA, or IT review.
+- FERPA Notes: student PII, school official exception, direct control, redisclosure, and secondary-use considerations.
+- Summarized Email Explanation: copy-paste message for notifying a teacher of approval, denial, or review-needed status.

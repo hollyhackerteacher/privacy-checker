@@ -55,6 +55,8 @@ More replication notes:
 - Security header presence for CSP, HSTS, permissions policy, and referrer policy
 - Public privacy, terms, data, or student policy links
 - Utah K-12 review notes for teacher or IT director evaluation
+- FERPA considerations for student PII, school official exception, redisclosure, and secondary use
+- A copy-paste teacher notification email explaining approval, denial, or review-needed status
 
 ## Official References
 
