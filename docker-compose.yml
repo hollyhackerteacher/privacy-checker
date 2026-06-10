@@ -1,0 +1,13 @@
+services:
+  privacy-checker:
+    build: .
+    container_name: privacy-checker
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      NODE_ENV: production
+      PORT: 5173
+    ports:
+      - "127.0.0.1:5173:5173"

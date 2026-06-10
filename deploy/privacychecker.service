@@ -1,0 +1,16 @@
+[Unit]
+Description=Privacy Checker
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/privacy-checker
+EnvironmentFile=/opt/privacy-checker/.env
+ExecStart=/usr/bin/npm start
+Restart=always
+RestartSec=5
+User=www-data
+Group=www-data
+
+[Install]
+WantedBy=multi-user.target
