@@ -59,6 +59,8 @@ More replication notes:
 - A copy-paste teacher notification email explaining approval, denial, or review-needed status
 - Clickable findings with drill-down evidence for cookies, trackers, processors, forms, policy signals, and headers
 - URL normalization/fallback for inputs like `example.com`, `www.example.com`, or full `https://example.com`
+- Expanded suitability checks for login/SSO, student data categories, COPPA, FERPA contract fit, targeted advertising, retention/deletion, subprocessors, AI use, security posture, breach terms, data location, accessibility, age/content suitability, and vendor trust signals
+- Prioritized inspection of public privacy policies, terms of service, subprocessors, cookies, accessibility, AI, and security pages when linked from the scanned site
 
 ## Official References
 

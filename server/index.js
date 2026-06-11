@@ -80,6 +80,10 @@ const UTAH_REFERENCES = [
   {
     label: "FERPA School Official Exception",
     url: "https://studentprivacy.ed.gov/faq/who-school-official-under-ferpa"
+  },
+  {
+    label: "FTC COPPA Rule",
+    url: "https://www.ftc.gov/legal-library/browse/rules/childrens-online-privacy-protection-rule-coppa"
   }
 ];
 
@@ -240,6 +244,7 @@ function analyzePage(page) {
     storageSignals: detectStorageSignals(page.html || ""),
     privacyLinks: collectPrivacyLinks($, baseUrl),
     forms: collectForms($, baseUrl),
+    loginSignals: detectLoginSignals($, page.html || ""),
     policySignals: detectPolicySignals($.text()),
     securityHeaders: page.headers || {}
   };
@@ -254,6 +259,7 @@ async function buildReport({ targetUrl, startedAt, scan }) {
   const storageSignals = uniqueByLabel(pages.flatMap((page) => page.storageSignals));
   const privacyLinks = uniqueByUrl(pages.flatMap((page) => page.privacyLinks)).slice(0, 12);
   const forms = pages.flatMap((page) => page.forms);
+  const loginSignals = uniqueByLabel(pages.flatMap((page) => page.loginSignals));
   const policySignals = summarizePolicySignals(pages);
   const securityHeaders = summarizeSecurityHeaders(pages);
   const pagesScanned = pages.map(({ url, status, title, error }) => ({ url, status, title, error }));
@@ -261,7 +267,8 @@ async function buildReport({ targetUrl, startedAt, scan }) {
   const thirdParties = classifyThirdParties(resourceUrls, firstPartyDomain);
   const scores = scoreFindings({ thirdParties, cookieHeaders, storageSignals, privacyLinks, forms, policySignals, securityHeaders });
   const findings = buildFindings({ thirdParties, cookieHeaders, storageSignals, privacyLinks, forms, policySignals, securityHeaders, pagesScanned });
-  const highLevelSummary = buildHighLevelSummary({ scores, thirdParties, cookieHeaders, storageSignals, privacyLinks, forms, policySignals, securityHeaders });
+  const evaluationChecks = buildEvaluationChecks({ thirdParties, cookieHeaders, storageSignals, privacyLinks, forms, loginSignals, policySignals, securityHeaders, pagesScanned });
+  const highLevelSummary = buildHighLevelSummary({ scores, thirdParties, cookieHeaders, storageSignals, privacyLinks, forms, policySignals, securityHeaders, evaluationChecks });
 
   const report = {
     scannedAt: startedAt,
@@ -295,8 +302,10 @@ async function buildReport({ targetUrl, startedAt, scan }) {
     privacyLinks,
     pagesScanned,
     forms,
+    loginSignals,
     policySignals,
     securityHeaders,
+    evaluationChecks,
     highLevelSummary,
     findings,
     utahReview: buildUtahNotes({ thirdParties, cookieHeaders, storageSignals, privacyLinks, forms, policySignals }),
@@ -342,10 +351,10 @@ function discoverDeepUrls(page, firstPartyDomain) {
 function scoreDeepLink(value) {
   const rules = [
     [/privacy|student.?privacy|data.?privacy/, 100],
-    [/terms|conditions|legal/, 80],
+    [/terms|conditions|legal|tos/, 90],
     [/cookie|tracking|advertising|subprocessor|processor|security|trust|dpa/, 70],
-    [/children|student|school|parent|education|ferpa|coppa|utah/, 55],
-    [/login|sign.?in|signup|register|account/, 35],
+    [/children|student|school|parent|education|ferpa|coppa|utah|accessibility|ai|artificial.?intelligence/, 55],
+    [/login|sign.?in|sso|clever|classlink|google|microsoft|signup|register|account/, 35],
     [/contact|support|about/, 15]
   ];
 
@@ -534,6 +543,25 @@ function collectForms($, baseUrl) {
   return forms.slice(0, 20);
 }
 
+function detectLoginSignals($, html) {
+  const signals = [];
+  const text = $.text();
+  const checks = [
+    ["Google SSO", /continue with google|sign in with google|accounts\.google\.com|googleoauth/i],
+    ["Microsoft SSO", /sign in with microsoft|login\.microsoftonline\.com|microsoftonline|azuread/i],
+    ["Clever SSO", /clever\.com|sign in with clever/i],
+    ["ClassLink SSO", /classlink|launchpad\.classlink\.com/i],
+    ["Account login", /log in|login|sign in|student login|teacher login/i],
+    ["Account registration", /sign up|create account|register/i]
+  ];
+
+  for (const [label, pattern] of checks) {
+    if (pattern.test(`${text} ${html}`)) signals.push({ label });
+  }
+
+  return signals;
+}
+
 function isSensitiveField(value) {
   return /student|child|name|email|phone|address|birth|birthday|dob|grade|school|teacher|parent|guardian|location|password|username|id/i.test(value);
 }
@@ -551,7 +579,16 @@ function detectPolicySignals(text) {
     ["retention", "Data retention", /retain|retention|delete|deletion|destroy/i],
     ["security", "Security controls", /encrypt|security|safeguard|access control/i],
     ["utah", "Utah reference", /utah|ucpa|student data protection/i],
-    ["dpa", "DPA or contract", /data privacy agreement|dpa|contract/i]
+    ["dpa", "DPA or contract", /data privacy agreement|dpa|contract/i],
+    ["aiTraining", "AI training or model improvement", /train (our )?(ai|models)|model improvement|improve (our )?(ai|models)|machine learning|artificial intelligence|generative ai/i],
+    ["automatedDecision", "Automated decision-making", /automated decision|profiling|predictive|algorithmic/i],
+    ["parentalConsent", "Parental consent", /parental consent|parent consent|verifiable consent/i],
+    ["breach", "Breach notification", /breach|security incident|incident notification|notify.*breach/i],
+    ["dataLocation", "Data location or transfer", /data transfer|international transfer|outside the united states|data location|data residency|subprocessor location/i],
+    ["accessibility", "Accessibility statement", /accessibility|wcag|ada|section 508/i],
+    ["vendorTrust", "Vendor trust certification", /soc 2|iso 27001|security certification|privacy pledge|student privacy pledge/i],
+    ["userGeneratedContent", "User-generated content or chat", /user.?generated|post content|chat|message|forum|community|comments/i],
+    ["ageSuitability", "Age suitability", /under 13|children under|age requirement|minimum age|not intended for children/i]
   ];
 
   return checks
@@ -602,7 +639,10 @@ function scoreFindings({ thirdParties, cookieHeaders, storageSignals, privacyLin
   score -= forms.filter((form) => form.sensitiveFieldCount > 0).length * 8;
   if (!privacyLinks.length) score -= 14;
   if (policySignals.some((signal) => signal.key === "targetedAdvertising")) score -= 12;
+  if (policySignals.some((signal) => signal.key === "aiTraining")) score -= 10;
+  if (policySignals.some((signal) => signal.key === "sellShare")) score -= 12;
   if (!policySignals.some((signal) => signal.key === "retention")) score -= 5;
+  if (!policySignals.some((signal) => signal.key === "breach")) score -= 3;
   if (!securityHeaders.contentSecurityPolicy) score -= 4;
   if (!securityHeaders.strictTransportSecurity) score -= 4;
   score = Math.max(0, Math.min(100, score));
@@ -718,7 +758,44 @@ function buildFindings({ thirdParties, cookieHeaders, storageSignals, privacyLin
   ];
 }
 
-function buildHighLevelSummary({ scores, thirdParties, cookieHeaders, storageSignals, privacyLinks, forms, policySignals, securityHeaders }) {
+function buildEvaluationChecks({ thirdParties, cookieHeaders, storageSignals, privacyLinks, forms, loginSignals, policySignals, securityHeaders, pagesScanned }) {
+  const cookies = cookieHeaders.map((header) => parseCookieHeader(header));
+  const adCookies = cookies.filter((cookie) => cookie.purpose === "Advertising / analytics");
+  const sensitiveForms = forms.filter((form) => form.sensitiveFieldCount > 0);
+  const policy = new Set(policySignals.map((signal) => signal.key));
+  const scannedTitles = pagesScanned.map((page) => page.title).join(", ");
+
+  return [
+    evaluationCheck("Login / account signals", loginSignals.length ? "review" : "low", loginSignals.length ? loginSignals.map((item) => item.label).join(", ") : "No public login or SSO signal detected.", "If students authenticate through SSO or create accounts, review student data flow and agreement terms."),
+    evaluationCheck("Student data categories", sensitiveForms.length ? "review" : "low", sensitiveForms.length ? `${sensitiveForms.length} form(s) may collect student, parent, account, or contact data.` : "No public sensitive form fields detected.", "Names, emails, grades, assignments, photos, voice, location, and device IDs require student-data review."),
+    evaluationCheck("COPPA indicators", policy.has("coppa") || policy.has("children") || policy.has("parentalConsent") || policy.has("ageSuitability") ? "review" : "unknown", matchingPolicyLabels(policySignals, ["coppa", "children", "parentalConsent", "ageSuitability"]) || "No COPPA or under-13 policy signal detected.", "For tools directed to children under 13 or collecting personal information from them, check parental consent and school-consent basis."),
+    evaluationCheck("FERPA contract fit", policy.has("ferpa") || policy.has("dpa") ? "review" : "unknown", matchingPolicyLabels(policySignals, ["ferpa", "dpa"]) || "No FERPA or DPA language detected in scanned pages.", "Approval is stronger when terms cover educational purpose, school control, no redisclosure, and no secondary use."),
+    evaluationCheck("Targeted advertising", thirdParties.advertisers.length || adCookies.length || policy.has("targetedAdvertising") ? "blocker" : "low", [...thirdParties.advertisers.map((item) => item.domain), ...adCookies.map((cookie) => cookie.name), matchingPolicyLabels(policySignals, ["targetedAdvertising"])].filter(Boolean).join(", ") || "No advertising tracker or targeted advertising signal detected.", "Advertising trackers or targeted advertising language should block approval without explicit student-data restrictions."),
+    evaluationCheck("Data retention / deletion", policy.has("retention") ? "review" : "review", policy.has("retention") ? "Retention/deletion language detected." : "No retention/deletion language detected.", "District approval should require deletion/return of student data at contract end or request."),
+    evaluationCheck("Subprocessor list", thirdParties.processors.length || policy.has("subprocessors") ? "review" : "unknown", [...thirdParties.processors.map((item) => item.domain), matchingPolicyLabels(policySignals, ["subprocessors"])].filter(Boolean).join(", ") || "No public subprocessor signal detected.", "Observed processors should match vendor subprocessor/DPA terms."),
+    evaluationCheck("AI use", policy.has("aiTraining") || policy.has("automatedDecision") ? "review" : "unknown", matchingPolicyLabels(policySignals, ["aiTraining", "automatedDecision"]) || "No AI training or automated decision language detected.", "Student data should not be used to train models, improve generalized AI, profile students, or make automated decisions without district-approved terms."),
+    evaluationCheck("Security posture", !securityHeaders.strictTransportSecurity || !securityHeaders.contentSecurityPolicy ? "review" : "low", Object.entries(securityHeaders).map(([key, value]) => `${key}: ${value ? "present" : "missing"}`).join(", "), "HTTPS enforcement, CSP, permissions, and referrer policy improve technical confidence."),
+    evaluationCheck("Breach terms", policy.has("breach") ? "review" : "review", policy.has("breach") ? "Breach/security incident language detected." : "No breach notification language detected.", "Vendor terms should include breach notification timing and security incident duties."),
+    evaluationCheck("Data location", policy.has("dataLocation") ? "review" : "unknown", policy.has("dataLocation") ? "Data location or transfer language detected." : "No data location or international transfer language detected.", "Districts may need to know hosting region, international transfers, and subprocessor locations."),
+    evaluationCheck("Accessibility basics", policy.has("accessibility") ? "review" : "unknown", policy.has("accessibility") ? "Accessibility/WCAG statement detected." : "No accessibility statement detected.", "Accessibility does not decide privacy approval, but it matters for classroom suitability."),
+    evaluationCheck("Age/content suitability", policy.has("userGeneratedContent") || policy.has("ageSuitability") ? "review" : "low", matchingPolicyLabels(policySignals, ["userGeneratedContent", "ageSuitability"]) || "No user-generated content, chat, or age restriction signal detected.", "Chat, comments, public sharing, unsafe external links, or age restrictions may make a tool unsuitable even if privacy terms are adequate."),
+    evaluationCheck("Vendor trust signals", policy.has("vendorTrust") ? "review" : "unknown", policy.has("vendorTrust") ? "Vendor trust/security certification language detected." : "No SOC 2, ISO 27001, privacy pledge, or similar trust signal detected.", "Trust signals support review but do not replace a district DPA."),
+    evaluationCheck("Privacy/terms pages inspected", privacyLinks.length ? "review" : "blocker", privacyLinks.length ? `Detected policy/terms links; scanned pages include: ${scannedTitles}` : "No privacy, terms, data, or student policy link detected.", "Approval should rely on actual privacy policy, terms of service, and DPA language.")
+  ];
+}
+
+function evaluationCheck(label, status, evidence, conclusion) {
+  return { label, status, evidence, conclusion };
+}
+
+function matchingPolicyLabels(policySignals, keys) {
+  return policySignals
+    .filter((signal) => keys.includes(signal.key))
+    .map((signal) => signal.label)
+    .join(", ");
+}
+
+function buildHighLevelSummary({ scores, thirdParties, cookieHeaders, storageSignals, privacyLinks, forms, policySignals, securityHeaders, evaluationChecks }) {
   const cookies = cookieHeaders.map((header) => parseCookieHeader(header));
   const adCookies = cookies.filter((cookie) => cookie.purpose === "Advertising / analytics");
   const sensitiveForms = forms.filter((form) => form.sensitiveFieldCount > 0);
@@ -771,6 +848,18 @@ function buildHighLevelSummary({ scores, thirdParties, cookieHeaders, storageSig
   if (policySignals.some((signal) => signal.key === "sellShare")) {
     likelyViolationWithoutAgreement.push(
       "Policy language references selling or sharing personal information. This requires denial or legal review unless student data is clearly excluded by agreement."
+    );
+  }
+
+  if (policySignals.some((signal) => signal.key === "aiTraining")) {
+    requiresDetailedReview.push(
+      "Policy language references AI training, model improvement, or machine learning. Student data should not be used for generalized AI training without explicit district-approved terms."
+    );
+  }
+
+  if (policySignals.some((signal) => signal.key === "userGeneratedContent")) {
+    concerning.push(
+      "User-generated content, chat, comments, or community features were detected in policy language. This may create moderation and student safety concerns."
     );
   }
 
@@ -963,8 +1052,10 @@ function buildAipcPayload(report) {
     privacyLinks: report.privacyLinks,
     pagesScanned: report.pagesScanned,
     forms: report.forms,
+    loginSignals: report.loginSignals,
     policySignals: report.policySignals,
     securityHeaders: report.securityHeaders,
+    evaluationChecks: report.evaluationChecks,
     highLevelSummary: report.highLevelSummary,
     ferpaConsiderations: report.ferpaConsiderations,
     findings: report.findings,

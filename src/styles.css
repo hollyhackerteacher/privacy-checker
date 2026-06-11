@@ -341,6 +341,10 @@ a {
   margin-bottom: 16px;
 }
 
+.evaluation-section {
+  margin-bottom: 16px;
+}
+
 .section-title {
   gap: 9px;
   margin-bottom: 14px;
@@ -466,8 +470,57 @@ a {
 
 .evidence-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
+}
+
+.check-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.check-card {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-height: 172px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfdfc;
+}
+
+.check-card div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.check-card span {
+  color: var(--teal);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.check-card p,
+.check-card em {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-style: normal;
+  line-height: 1.45;
+}
+
+.check-blocker {
+  border-color: #f1b6b2;
+  background: #fff7f6;
+}
+
+.check-review {
+  border-color: #edd5a8;
+  background: #fffaf0;
 }
 
 .summary-grid {
@@ -679,7 +732,8 @@ a {
   .workspace,
   .split-sections,
   .evidence-grid,
-  .summary-grid {
+  .summary-grid,
+  .check-grid {
     grid-template-columns: 1fr;
   }
 

@@ -42,3 +42,4 @@ These can be changed with environment variables.
 - FERPA Notes: student PII, school official exception, direct control, redisclosure, and secondary-use considerations.
 - Summarized Email Explanation: copy-paste message for notifying a teacher of approval, denial, or review-needed status.
 - Finding Drill-down: clicking a finding opens the exact detected cookies, tracker domains, processor domains, form fields, policy signals, page list, or headers behind that row.
+- Expanded Evaluation Checks: standardized rubric covering login/SSO, student data categories, COPPA, FERPA contract fit, targeted advertising, retention/deletion, subprocessors, AI use, security posture, breach terms, data location, accessibility, age/content suitability, vendor trust, and privacy/terms inspection.

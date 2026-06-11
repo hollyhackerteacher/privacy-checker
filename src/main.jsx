@@ -321,6 +321,14 @@ function App() {
             <DeepEvidence report={report} />
           </section>
 
+          <section className="report-section evaluation-section">
+            <div className="section-title">
+              <CheckCircle2 size={18} />
+              <h2>Expanded Evaluation Checks</h2>
+            </div>
+            <EvaluationChecks checks={report.evaluationChecks || []} />
+          </section>
+
           <section className="report-section">
             <div className="section-title">
               <FileText size={18} />
@@ -453,11 +461,31 @@ function DeepEvidence({ report }) {
     <div className="evidence-grid">
       <EvidenceBlock title="Pages crawled" items={(report.pagesScanned || []).map((page) => `${page.status || "n/a"} · ${page.title}`)} />
       <EvidenceBlock title="Policy language" items={(report.policySignals || []).map((signal) => signal.label)} empty="No key policy terms detected" />
+      <EvidenceBlock title="Login / SSO" items={(report.loginSignals || []).map((signal) => signal.label)} empty="No public login or SSO signal detected" />
       <EvidenceBlock title="Forms and fields" items={(report.forms || []).map((form) => `${form.method} · ${form.sensitiveFieldCount} sensitive field signal(s)`)} empty="No public forms detected" />
       <EvidenceBlock
         title="Security headers"
         items={Object.entries(report.securityHeaders || {}).map(([key, value]) => `${headerLabel(key)}: ${value ? "present" : "missing"}`)}
       />
+    </div>
+  );
+}
+
+function EvaluationChecks({ checks }) {
+  if (!checks.length) return <p className="aipc-text">No expanded evaluation checks were returned.</p>;
+
+  return (
+    <div className="check-grid">
+      {checks.map((check) => (
+        <article className={`check-card check-${check.status}`} key={check.label}>
+          <div>
+            <strong>{check.label}</strong>
+            <span>{check.status}</span>
+          </div>
+          <p>{check.evidence}</p>
+          <em>{check.conclusion}</em>
+        </article>
+      ))}
     </div>
   );
 }

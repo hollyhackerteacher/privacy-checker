@@ -13,3 +13,4 @@
 - Added FERPA considerations and high-level approval/denial/review-needed summary buckets.
 - Strengthened scanner conclusions for advertising trackers, advertising cookies, missing privacy documentation, forms, processors, and policy language.
 - Added blank initial report state, URL normalization/fallback, and clickable finding drill-down evidence.
+- Added expanded evaluation checks and stronger privacy-policy / terms-of-service inspection priorities.
