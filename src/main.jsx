@@ -27,6 +27,8 @@ const defaultReferences = [
   { label: "FERPA School Official Exception", url: "https://studentprivacy.ed.gov/faq/who-school-official-under-ferpa" }
 ];
 
+const repositoryUrl = import.meta.env.VITE_REPOSITORY_URL || "https://github.com/fireboltservices/privacy-checker";
+
 const sampleReport = {
   scannedAt: new Date().toISOString(),
   requestedUrl: "https://example-learning-site.org",
@@ -230,6 +232,10 @@ function App() {
           </div>
         </div>
         <div className="topbar-actions">
+          <a className="repo-link" href={repositoryUrl} target="_blank" rel="noreferrer">
+            Run your own version
+            <ExternalLink size={14} />
+          </a>
           <button className="icon-button" onClick={() => window.print()} title="Print report" disabled={!report}>
             <Printer size={18} />
           </button>

@@ -15,3 +15,4 @@
 - Added blank initial report state, URL normalization/fallback, and clickable finding drill-down evidence.
 - Added expanded evaluation checks and stronger privacy-policy / terms-of-service inspection priorities.
 - Added mobile-responsive report, scan form, findings drill-down cards, and copy-email layout.
+- Added public-repo reproduction docs and a configurable "Run your own version" UI link.

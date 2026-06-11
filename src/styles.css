@@ -93,6 +93,22 @@ a {
   gap: 8px;
 }
 
+.repo-link {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 12px;
+  color: var(--teal);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  font-size: 13px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
 .icon-button {
   display: grid;
   width: 38px;
@@ -774,7 +790,13 @@ a {
   }
 
   .topbar-actions {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
     justify-content: flex-end;
+  }
+
+  .repo-link {
+    min-width: 0;
   }
 
   .workspace {
@@ -916,6 +938,15 @@ a {
   }
 
   .brand span {
+    font-size: 12px;
+  }
+
+  .topbar-actions {
+    grid-template-columns: 1fr 38px 38px;
+  }
+
+  .repo-link {
+    padding: 0 9px;
     font-size: 12px;
   }
 
