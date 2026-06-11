@@ -5,7 +5,7 @@ This guide is written for a public GitHub repo. It explains the production idea 
 ## 1. Fork Or Clone
 
 ```bash
-git clone https://github.com/your-org/privacy-checker.git
+git clone https://github.com/hollyhackerteacher/privacy-checker.git
 cd privacy-checker
 npm install
 npm run dev
@@ -32,7 +32,7 @@ SCAN_PAGE_TIMEOUT_MS=15000
 AIPC_PROVIDER=ollama
 AIPC_MODEL=qwen2.5:14b
 OLLAMA_BASE_URL=http://TAILNET-OLLAMA-HOST:11434
-VITE_REPOSITORY_URL=https://github.com/your-org/privacy-checker
+VITE_REPOSITORY_URL=https://github.com/hollyhackerteacher/privacy-checker
 ```
 
 ## 3. Deploy On A VPS
@@ -74,7 +74,7 @@ Do not publish the real Tailnet IP, device name, auth keys, or API keys.
 Set `VITE_REPOSITORY_URL` before building if your fork lives somewhere else:
 
 ```bash
-VITE_REPOSITORY_URL=https://github.com/your-org/privacy-checker npm run build
+VITE_REPOSITORY_URL=https://github.com/hollyhackerteacher/privacy-checker npm run build
 ```
 
 If unset, the app uses the default repository link in `src/main.jsx`.

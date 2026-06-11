@@ -43,7 +43,7 @@ AIPC_API_KEY=
 Optional frontend build value:
 
 ```bash
-VITE_REPOSITORY_URL=https://github.com/your-org/privacy-checker
+VITE_REPOSITORY_URL=https://github.com/hollyhackerteacher/privacy-checker
 ```
 
 ## VPS Pattern

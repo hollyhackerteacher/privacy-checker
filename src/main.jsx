@@ -27,7 +27,7 @@ const defaultReferences = [
   { label: "FERPA School Official Exception", url: "https://studentprivacy.ed.gov/faq/who-school-official-under-ferpa" }
 ];
 
-const repositoryUrl = import.meta.env.VITE_REPOSITORY_URL || "https://github.com/fireboltservices/privacy-checker";
+const repositoryUrl = import.meta.env.VITE_REPOSITORY_URL || "https://github.com/hollyhackerteacher/privacy-checker";
 
 const sampleReport = {
   scannedAt: new Date().toISOString(),
