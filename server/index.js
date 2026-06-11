@@ -85,9 +85,9 @@ const UTAH_REFERENCES = [
 
 app.get("/api/scan", async (req, res) => {
   try {
-    const targetUrl = normalizeUrl(req.query.url);
+    const candidates = normalizeUrlCandidates(req.query.url);
     const startedAt = new Date().toISOString();
-    const scan = await scanWebsite(targetUrl);
+    const { targetUrl, scan } = await scanFirstReachable(candidates);
     const report = await buildReport({ targetUrl, startedAt, scan });
     res.json(report);
   } catch (error) {
@@ -115,20 +115,50 @@ app.listen(port, () => {
   console.log(`Privacy checker running at http://localhost:${port}`);
 });
 
-function normalizeUrl(rawUrl) {
+function normalizeUrlCandidates(rawUrl) {
   if (!rawUrl || typeof rawUrl !== "string") {
     throw new Error("Enter a website URL to scan.");
   }
 
   const trimmed = rawUrl.trim();
-  const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
-  const parsed = new URL(withProtocol);
+  const hasProtocol = /^https?:\/\//i.test(trimmed);
+  const parsedInput = new URL(hasProtocol ? trimmed : `https://${trimmed}`);
 
-  if (!["http:", "https:"].includes(parsed.protocol)) {
+  if (!["http:", "https:"].includes(parsedInput.protocol)) {
     throw new Error("Only HTTP and HTTPS websites can be scanned.");
   }
 
-  return parsed;
+  const host = parsedInput.hostname.replace(/^www\./i, "");
+  const path = `${parsedInput.pathname || "/"}${parsedInput.search || ""}`;
+  const candidates = [];
+
+  if (hasProtocol) {
+    candidates.push(parsedInput.href);
+    if (!parsedInput.hostname.startsWith("www.")) {
+      candidates.push(`${parsedInput.protocol}//www.${host}${path}`);
+    }
+  } else {
+    candidates.push(`https://${host}${path}`);
+    candidates.push(`https://www.${host}${path}`);
+    candidates.push(`http://${host}${path}`);
+    candidates.push(`http://www.${host}${path}`);
+  }
+
+  return [...new Set(candidates)].map((url) => new URL(url));
+}
+
+async function scanFirstReachable(candidates) {
+  let lastError;
+
+  for (const targetUrl of candidates) {
+    try {
+      return { targetUrl, scan: await scanWebsite(targetUrl) };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError || new Error("Unable to resolve this website URL.");
 }
 
 async function scanWebsite(targetUrl) {

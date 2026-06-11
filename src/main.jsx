@@ -18,6 +18,15 @@ import {
 } from "lucide-react";
 import "./styles.css";
 
+const defaultReferences = [
+  { label: "USBE Student Data Privacy", url: "https://schools.utah.gov/studentdataprivacy/index.php" },
+  { label: "USBE Laws & Policies", url: "https://schools.utah.gov/studentdataprivacy/laws.php" },
+  { label: "Board Rule R277-487", url: "https://schools.utah.gov/adminrules/R277-487.php" },
+  { label: "Utah Code 53E-9-301", url: "https://le.utah.gov/xcode/Title53E/Chapter9/53E-9-S301.html" },
+  { label: "FERPA Regulations - 34 CFR Part 99", url: "https://studentprivacy.ed.gov/ferpa" },
+  { label: "FERPA School Official Exception", url: "https://studentprivacy.ed.gov/faq/who-school-official-under-ferpa" }
+];
+
 const sampleReport = {
   scannedAt: new Date().toISOString(),
   requestedUrl: "https://example-learning-site.org",
@@ -168,18 +177,18 @@ const sampleReport = {
 
 function App() {
   const [url, setUrl] = useState("");
-  const [report, setReport] = useState(sampleReport);
+  const [report, setReport] = useState(null);
+  const [selectedFinding, setSelectedFinding] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const generatedAt = useMemo(
-    () =>
-      new Intl.DateTimeFormat("en-US", {
-        dateStyle: "medium",
-        timeStyle: "short"
-      }).format(new Date(report.scannedAt)),
-    [report.scannedAt]
-  );
+  const generatedAt = useMemo(() => {
+    if (!report) return "";
+    return new Intl.DateTimeFormat("en-US", {
+      dateStyle: "medium",
+      timeStyle: "short"
+    }).format(new Date(report.scannedAt));
+  }, [report]);
 
   async function runScan(event) {
     event.preventDefault();
@@ -187,10 +196,11 @@ function App() {
     setError("");
 
     try {
-      const response = await fetch(`/api/scan?url=${encodeURIComponent(url)}`);
+      const response = await fetch(`/api/scan?url=${encodeURIComponent(url.trim())}`);
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Scan failed.");
       setReport(payload);
+      setSelectedFinding(null);
     } catch (scanError) {
       setError(scanError.message);
     } finally {
@@ -199,6 +209,7 @@ function App() {
   }
 
   function downloadReport() {
+    if (!report) return;
     const blob = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" });
     const href = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
@@ -219,10 +230,10 @@ function App() {
           </div>
         </div>
         <div className="topbar-actions">
-          <button className="icon-button" onClick={() => window.print()} title="Print report">
+          <button className="icon-button" onClick={() => window.print()} title="Print report" disabled={!report}>
             <Printer size={18} />
           </button>
-          <button className="icon-button" onClick={downloadReport} title="Download JSON report">
+          <button className="icon-button" onClick={downloadReport} title="Download JSON report" disabled={!report}>
             <Download size={18} />
           </button>
         </div>
@@ -238,7 +249,7 @@ function App() {
                 id="website-url"
                 value={url}
                 onChange={(event) => setUrl(event.target.value)}
-                placeholder="https://vendor-site.com"
+                placeholder="vendor-site.com"
                 autoComplete="url"
               />
             </div>
@@ -259,7 +270,7 @@ function App() {
 
           <div className="reference-box">
             <h2>Official References</h2>
-            {report.references.map((reference) => (
+            {(report?.references || defaultReferences).map((reference) => (
               <a key={reference.url} href={reference.url} target="_blank" rel="noreferrer">
                 {reference.label}
                 <ExternalLink size={14} />
@@ -269,6 +280,10 @@ function App() {
         </aside>
 
         <section className="report" aria-live="polite">
+          {!report ? (
+            <EmptyReport />
+          ) : (
+            <>
           <div className="report-header">
             <div>
               <p className="eyeline">Scanned {generatedAt}</p>
@@ -319,12 +334,12 @@ function App() {
                 <span>Conclusion</span>
               </div>
               {report.findings.map((finding, index) => (
-                <div className="table-row" key={`${finding.area}-${index}`}>
+                <button className="table-row clickable-row" key={`${finding.area}-${index}`} onClick={() => setSelectedFinding(finding)}>
                   <span><Severity value={finding.severity} /></span>
                   <span>{finding.area}</span>
                   <span>{finding.evidence}</span>
                   <span>{finding.action}</span>
-                </div>
+                </button>
               ))}
             </div>
           </section>
@@ -371,6 +386,9 @@ function App() {
             <strong>Report limitations</strong>
             {report.limitations.map((item) => <span key={item}>{item}</span>)}
           </section>
+          <FindingDrilldown finding={selectedFinding} report={report} onClose={() => setSelectedFinding(null)} />
+          </>
+          )}
         </section>
       </section>
     </main>
@@ -508,6 +526,84 @@ function headerLabel(key) {
   return key
     .replace(/([A-Z])/g, " $1")
     .replace(/^./, (letter) => letter.toUpperCase());
+}
+
+function EmptyReport() {
+  return (
+    <div className="empty-report">
+      <ShieldCheck size={32} />
+      <h1>Ready for a privacy check</h1>
+      <p>Enter a website URL to generate a Utah K-12 privacy report, findings drill-down, FERPA notes, and teacher-ready notification email.</p>
+    </div>
+  );
+}
+
+function FindingDrilldown({ finding, report, onClose }) {
+  if (!finding) return null;
+  const details = drilldownDetails(finding, report);
+
+  return (
+    <div className="drilldown" role="dialog" aria-modal="true" aria-label={`${finding.area} finding details`}>
+      <div className="drilldown-panel">
+        <div className="drilldown-header">
+          <div>
+            <span><Severity value={finding.severity} /></span>
+            <h2>{finding.area}</h2>
+          </div>
+          <button className="icon-button" onClick={onClose} title="Close details">×</button>
+        </div>
+        <div className="drilldown-body">
+          <DetailLine label="Evidence" value={finding.evidence} />
+          <DetailLine label="Conclusion" value={finding.action} />
+          <div className="drilldown-list">
+            <strong>Actual detected items</strong>
+            {details.length ? details.map((item) => <span key={item}>{item}</span>) : <span>No additional detail available.</span>}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DetailLine({ label, value }) {
+  return (
+    <div className="detail-line">
+      <strong>{label}</strong>
+      <span>{value}</span>
+    </div>
+  );
+}
+
+function drilldownDetails(finding, report) {
+  const area = finding.area.toLowerCase();
+  if (area.includes("cookie")) {
+    return (report.cookies || []).map((cookie) => `${cookie.name} · ${cookie.purpose || "Unknown"} · SameSite ${cookie.sameSite} · ${cookie.pageUrl || report.finalUrl}`);
+  }
+  if (area.includes("advertising")) {
+    return (report.thirdParties?.advertisers || []).map((item) => `${item.domain} · ${item.host} · ${item.sampleUrl}`);
+  }
+  if (area.includes("processor")) {
+    return (report.thirdParties?.processors || []).map((item) => `${item.domain} · ${item.host} · ${item.sampleUrl}`);
+  }
+  if (area.includes("form")) {
+    return (report.forms || []).map((form) => `${form.method} ${form.action} · fields: ${form.fields.map((field) => `${field.name}${field.sensitive ? " (sensitive)" : ""}`).join(", ")}`);
+  }
+  if (area.includes("policy")) {
+    return (report.policySignals || []).map((signal) => `${signal.label} · found on ${signal.pages?.length || 0} page(s)`);
+  }
+  if (area.includes("security")) {
+    return Object.entries(report.securityHeaders || {}).map(([key, value]) => `${headerLabel(key)}: ${value ? "present" : "missing"}`);
+  }
+  if (area.includes("documentation")) {
+    return (report.privacyLinks || []).map((link) => `${link.label}: ${link.url}`);
+  }
+  if (area.includes("scan depth")) {
+    return (report.pagesScanned || []).map((page) => `${page.status || "n/a"} · ${page.title} · ${page.url}`);
+  }
+  return [
+    ...(report.thirdParties?.other || []).map((item) => `${item.domain} · ${item.host} · ${item.sampleUrl}`),
+    ...(report.storageSignals || []).map((item) => item.label)
+  ];
 }
 
 createRoot(document.getElementById("root")).render(<App />);

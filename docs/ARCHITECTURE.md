@@ -5,7 +5,7 @@ The app is a React/Vite frontend served by a small Express backend.
 ## Runtime Flow
 
 1. User enters a website URL.
-2. `GET /api/scan?url=...` normalizes and validates the URL.
+2. `GET /api/scan?url=...` normalizes and validates the URL, then tries safe protocol/`www` fallbacks.
 3. The backend fetches the public page, then follows a bounded set of relevant same-site links.
 4. The scanner extracts cookies, resource domains, forms, storage signals, policy terms, security headers, and privacy links.
 5. The backend builds a structured report.
@@ -41,3 +41,4 @@ These can be changed with environment variables.
 - Needs Detailed Review: items that may be approvable only after DPA, contract, FERPA, or IT review.
 - FERPA Notes: student PII, school official exception, direct control, redisclosure, and secondary-use considerations.
 - Summarized Email Explanation: copy-paste message for notifying a teacher of approval, denial, or review-needed status.
+- Finding Drill-down: clicking a finding opens the exact detected cookies, tracker domains, processor domains, form fields, policy signals, page list, or headers behind that row.

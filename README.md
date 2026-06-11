@@ -57,6 +57,8 @@ More replication notes:
 - Utah K-12 review notes for teacher or IT director evaluation
 - FERPA considerations for student PII, school official exception, redisclosure, and secondary use
 - A copy-paste teacher notification email explaining approval, denial, or review-needed status
+- Clickable findings with drill-down evidence for cookies, trackers, processors, forms, policy signals, and headers
+- URL normalization/fallback for inputs like `example.com`, `www.example.com`, or full `https://example.com`
 
 ## Official References
 
