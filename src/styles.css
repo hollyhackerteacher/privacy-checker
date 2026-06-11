@@ -21,6 +21,7 @@
 body {
   margin: 0;
   min-width: 320px;
+  overflow-x: hidden;
   color: var(--ink);
   background:
     linear-gradient(180deg, #f8faf8 0%, #edf4f0 46%, #f9fbfa 100%);
@@ -37,6 +38,8 @@ a {
 
 .app-shell {
   min-height: 100vh;
+  width: 100%;
+  overflow-x: hidden;
 }
 
 .topbar {
@@ -158,6 +161,7 @@ a {
 
 .url-row input {
   width: 100%;
+  min-width: 0;
   min-height: 46px;
   border: 0;
   outline: 0;
@@ -234,6 +238,7 @@ a {
   color: var(--slate);
   font-size: 14px;
   text-decoration: none;
+  overflow-wrap: anywhere;
 }
 
 .report {
@@ -260,7 +265,7 @@ a {
 .report h1 {
   max-width: 780px;
   margin: 0 0 8px;
-  font-size: clamp(28px, 4vw, 44px);
+  font-size: 42px;
   line-height: 1.05;
 }
 
@@ -311,6 +316,7 @@ a {
   display: grid;
   gap: 6px;
   min-height: 116px;
+  min-width: 0;
   padding: 15px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -330,6 +336,7 @@ a {
 
 .report-section {
   padding: 18px;
+  min-width: 0;
   box-shadow: none;
 }
 
@@ -373,6 +380,7 @@ a {
   border-top: 1px solid var(--line);
   font-size: 14px;
   text-align: left;
+  overflow-wrap: anywhere;
 }
 
 .clickable-row {
@@ -464,6 +472,7 @@ a {
   margin: 0;
   overflow: auto;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   color: var(--slate);
   font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
@@ -632,6 +641,7 @@ a {
 .detail-block span {
   color: var(--muted);
   font-size: 14px;
+  overflow-wrap: anywhere;
 }
 
 .limitations {
@@ -743,28 +753,179 @@ a {
 }
 
 @media (max-width: 760px) {
+  .topbar {
+    gap: 12px;
+    padding: 12px 14px;
+  }
+
   .topbar,
   .report-header {
     align-items: stretch;
     flex-direction: column;
   }
 
+  .brand {
+    align-items: flex-start;
+  }
+
+  .brand-mark {
+    width: 36px;
+    height: 36px;
+  }
+
+  .topbar-actions {
+    justify-content: flex-end;
+  }
+
   .workspace {
+    gap: 14px;
     padding: 14px;
   }
 
+  .scan-panel,
   .report {
     padding: 16px;
   }
 
+  .report-header {
+    gap: 14px;
+    padding-bottom: 16px;
+  }
+
+  .report h1 {
+    font-size: 28px;
+    line-height: 1.12;
+  }
+
+  .report-header a {
+    overflow-wrap: anywhere;
+  }
+
+  .risk-badge {
+    min-width: 0;
+  }
+
+  .risk-badge strong {
+    font-size: 34px;
+  }
+
   .metric-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin: 14px 0;
+  }
+
+  .metric {
+    min-height: 96px;
+    padding: 12px;
+  }
+
+  .metric strong {
+    font-size: 28px;
+  }
+
+  .report-section {
+    padding: 14px;
+  }
+
+  .section-title {
+    align-items: flex-start;
+  }
+
+  .findings-table {
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .table-head {
+    display: none;
+  }
+
+  .table-row {
+    min-width: 0;
+  }
+
+  .clickable-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    margin-bottom: 10px;
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+  }
+
+  .clickable-row span {
+    display: grid;
+    gap: 3px;
+  }
+
+  .clickable-row span::before {
+    content: attr(data-label);
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+
+  .email-header,
+  .note-list div,
+  .check-card div,
+  .drilldown-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .email-header .secondary-button {
+    width: 100%;
+  }
+
+  .aipc-card pre {
+    max-height: 260px;
+  }
+
+  .evidence-block,
+  .check-card {
+    min-height: 0;
+  }
+
+  .empty-report {
+    min-height: 360px;
+    padding: 20px;
+  }
+
+  .empty-report h1 {
+    font-size: 28px;
+    line-height: 1.12;
+  }
+
+  .drilldown {
+    align-items: end;
+    padding: 10px;
+  }
+
+  .drilldown-panel {
+    max-height: 88vh;
+    padding: 14px;
   }
 }
 
-@media (max-width: 480px) {
+@media (max-width: 420px) {
   .metric-grid {
     grid-template-columns: 1fr;
+  }
+
+  .brand span {
+    font-size: 12px;
+  }
+
+  .workspace {
+    padding: 10px;
+  }
+
+  .scan-panel,
+  .report {
+    padding: 14px;
   }
 }
 

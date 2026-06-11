@@ -14,3 +14,4 @@
 - Strengthened scanner conclusions for advertising trackers, advertising cookies, missing privacy documentation, forms, processors, and policy language.
 - Added blank initial report state, URL normalization/fallback, and clickable finding drill-down evidence.
 - Added expanded evaluation checks and stronger privacy-policy / terms-of-service inspection priorities.
+- Added mobile-responsive report, scan form, findings drill-down cards, and copy-email layout.

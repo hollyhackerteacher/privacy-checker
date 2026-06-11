@@ -343,10 +343,10 @@ function App() {
               </div>
               {report.findings.map((finding, index) => (
                 <button className="table-row clickable-row" key={`${finding.area}-${index}`} onClick={() => setSelectedFinding(finding)}>
-                  <span><Severity value={finding.severity} /></span>
-                  <span>{finding.area}</span>
-                  <span>{finding.evidence}</span>
-                  <span>{finding.action}</span>
+                  <span data-label="Severity"><Severity value={finding.severity} /></span>
+                  <span data-label="Area">{finding.area}</span>
+                  <span data-label="Evidence">{finding.evidence}</span>
+                  <span data-label="Conclusion">{finding.action}</span>
                 </button>
               ))}
             </div>
