@@ -1,0 +1,11 @@
+# Project-level Codex configuration for this repo.
+
+# Keep this file safe to commit.
+
+# Do not place secrets, tokens, provider auth, local absolute paths, or machine-specific settings here.
+
+# The AIPC is the persistent Codex host.
+
+# The VPS is only the broker/frontend/jump host.
+
+# Durable workflow notes live in AGENTS.md and docs/.
