@@ -28,7 +28,9 @@ body {
 }
 
 button,
-input {
+input,
+select,
+textarea {
   font: inherit;
 }
 
@@ -159,6 +161,7 @@ a {
 
 .scan-form label,
 .checklist h2,
+.reviewer-panel h2,
 .reference-box h2 {
   margin: 0;
   font-size: 13px;
@@ -182,6 +185,55 @@ a {
   border: 0;
   outline: 0;
   background: transparent;
+}
+
+.reviewer-panel {
+  display: grid;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.reviewer-panel input,
+.reviewer-panel select,
+.reviewer-panel textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfdfc;
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.reviewer-panel input,
+.reviewer-panel select {
+  min-height: 40px;
+  padding: 0 10px;
+}
+
+.reviewer-panel textarea {
+  resize: vertical;
+  padding: 10px;
+}
+
+.reviewer-panel label {
+  display: grid;
+  gap: 5px;
+  color: var(--slate);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.checkbox-row {
+  display: flex !important;
+  align-items: center;
+  gap: 8px !important;
+  font-weight: 700;
+}
+
+.checkbox-row input {
+  width: 16px;
+  min-height: 16px;
 }
 
 .primary-button {
@@ -283,6 +335,62 @@ a {
   margin: 0 0 8px;
   font-size: 42px;
   line-height: 1.05;
+}
+
+.plain-verdict {
+  display: grid;
+  grid-template-columns: 1fr minmax(260px, 0.95fr) auto;
+  gap: 16px;
+  margin: 18px 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f7fbf9;
+}
+
+.plain-verdict span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.plain-verdict strong {
+  display: block;
+  margin: 4px 0;
+  font-size: 28px;
+}
+
+.plain-verdict p,
+.plain-verdict li {
+  color: var(--slate);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.plain-verdict p,
+.plain-verdict ul {
+  margin: 0;
+}
+
+.plain-verdict ul {
+  padding-left: 18px;
+}
+
+.verdict-deny {
+  border-color: #f1b6b2;
+  background: #fff7f6;
+}
+
+.verdict-needs-review {
+  border-color: #edd5a8;
+  background: #fffaf0;
+}
+
+.verdict-actions {
+  display: grid;
+  align-content: start;
+  gap: 8px;
 }
 
 .risk-badge {
@@ -388,7 +496,7 @@ a {
 
 .table-row {
   display: grid;
-  grid-template-columns: 120px 170px minmax(180px, 1fr) minmax(240px, 1.2fr);
+  grid-template-columns: 110px 140px 160px minmax(180px, 1fr) minmax(240px, 1.2fr);
   gap: 14px;
   width: 100%;
   min-width: 880px;
@@ -430,6 +538,30 @@ a {
   border-radius: 999px;
   color: white;
   font-size: 12px;
+}
+
+.confidence {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 999px;
+  color: var(--slate);
+  background: var(--soft);
+  font-size: 12px;
+}
+
+.confidence-detected {
+  color: white;
+  background: var(--teal);
+}
+
+.confidence-inferred {
+  color: white;
+  background: var(--amber);
+}
+
+.confidence-not-found-publicly {
+  color: white;
+  background: var(--slate);
 }
 
 .severity-low {
@@ -503,6 +635,85 @@ a {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
+}
+
+.approval-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.approval-item {
+  display: grid;
+  gap: 7px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfdfc;
+}
+
+.approval-item span {
+  color: var(--teal);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.approval-item p,
+.vendor-profile span,
+.comparison-grid p,
+.comparison-grid span,
+.comparison-grid em,
+.snippet-list p,
+.snippet-list a {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-style: normal;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.approval-blocker {
+  border-color: #f1b6b2;
+  background: #fff7f6;
+}
+
+.approval-review {
+  border-color: #edd5a8;
+  background: #fffaf0;
+}
+
+.snippet-list,
+.vendor-profile,
+.comparison-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.snippet-list article,
+.comparison-grid article {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfdfc;
+}
+
+.comparison-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.comparison-title {
+  grid-template-columns: auto 1fr auto;
+}
+
+.vendor-profile {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfdfc;
 }
 
 .check-card {
@@ -791,7 +1002,7 @@ a {
 
   .topbar-actions {
     display: grid;
-    grid-template-columns: 1fr auto auto;
+    grid-template-columns: 1fr auto auto auto;
     justify-content: flex-end;
   }
 
@@ -831,6 +1042,15 @@ a {
     font-size: 34px;
   }
 
+  .plain-verdict {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .plain-verdict strong {
+    font-size: 26px;
+  }
+
   .metric-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 10px;
@@ -848,6 +1068,11 @@ a {
 
   .report-section {
     padding: 14px;
+  }
+
+  .approval-grid,
+  .comparison-grid {
+    grid-template-columns: 1fr;
   }
 
   .section-title {
@@ -942,7 +1167,7 @@ a {
   }
 
   .topbar-actions {
-    grid-template-columns: 1fr 38px 38px;
+    grid-template-columns: 1fr 38px 38px 38px;
   }
 
   .repo-link {

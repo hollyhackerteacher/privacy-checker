@@ -16,3 +16,5 @@
 - Added expanded evaluation checks and stronger privacy-policy / terms-of-service inspection priorities.
 - Added mobile-responsive report, scan form, findings drill-down cards, and copy-email layout.
 - Added public-repo reproduction docs and a configurable "Run your own version" UI link.
+- Added reviewer workflow fields, plain-language verdicts, approval checklist, confidence labels, policy snippets, PDF export, comparison mode, and local vendor profiles.
+- Moved Vite to development-only runtime usage and upgraded the dev toolchain to clear high-severity audit findings.

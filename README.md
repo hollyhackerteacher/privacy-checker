@@ -63,6 +63,13 @@ Do not commit your VPS IP, Tailnet IPs, SSH usernames, private hostnames, API ke
 - Security header presence for CSP, HSTS, permissions policy, and referrer policy
 - Utah K-12 review notes for teacher or IT director evaluation
 - FERPA considerations for student PII, school official exception, redisclosure, and secondary use
+- Reviewer workflow fields for district, grade band, intended use, login, student data entry, and DPA status
+- Plain-language verdict with concrete reasons and next step
+- Approval checklist for DPA, FERPA, advertising, student data, retention, subprocessors, breach/security, and public documentation
+- Finding confidence labels and "why this matters" explanations
+- Policy quote snippets from inspected public policies or terms
+- Polished PDF export for teacher/IT review packets
+- Local comparison mode and local known-vendor profile history
 - Copy-paste teacher notification email explaining approval, denial, or review-needed status
 - Clickable findings with drill-down evidence
 - URL normalization/fallback for inputs like `example.com`, `www.example.com`, or full `https://example.com`

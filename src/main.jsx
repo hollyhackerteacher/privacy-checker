@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   AlertTriangle,
@@ -7,6 +7,7 @@ import {
   Cookie,
   Download,
   ExternalLink,
+  FileDown,
   FileText,
   Globe2,
   Loader2,
@@ -14,6 +15,7 @@ import {
   Printer,
   Search,
   ShieldCheck,
+  Trash2,
   UsersRound
 } from "lucide-react";
 import "./styles.css";
@@ -28,6 +30,18 @@ const defaultReferences = [
 ];
 
 const repositoryUrl = import.meta.env.VITE_REPOSITORY_URL || "https://github.com/hollyhackerteacher/privacy-checker";
+const comparisonStorageKey = "privacy-checker-comparison-v1";
+const vendorProfileStorageKey = "privacy-checker-vendors-v1";
+const defaultReviewerContext = {
+  reviewerName: "",
+  district: "",
+  gradeBand: "",
+  intendedUse: "",
+  studentLogin: "unknown",
+  studentDataEntered: "unknown",
+  dpaOnFile: false,
+  reviewerNotes: ""
+};
 
 const sampleReport = {
   scannedAt: new Date().toISOString(),
@@ -179,10 +193,21 @@ const sampleReport = {
 
 function App() {
   const [url, setUrl] = useState("");
+  const [reviewerContext, setReviewerContext] = useState(defaultReviewerContext);
   const [report, setReport] = useState(null);
   const [selectedFinding, setSelectedFinding] = useState(null);
+  const [comparisonReports, setComparisonReports] = useState(() => loadStoredArray(comparisonStorageKey));
+  const [vendorProfiles, setVendorProfiles] = useState(() => loadStoredArray(vendorProfileStorageKey));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    localStorage.setItem(comparisonStorageKey, JSON.stringify(comparisonReports));
+  }, [comparisonReports]);
+
+  useEffect(() => {
+    localStorage.setItem(vendorProfileStorageKey, JSON.stringify(vendorProfiles));
+  }, [vendorProfiles]);
 
   const generatedAt = useMemo(() => {
     if (!report) return "";
@@ -198,10 +223,15 @@ function App() {
     setError("");
 
     try {
-      const response = await fetch(`/api/scan?url=${encodeURIComponent(url.trim())}`);
+      const params = new URLSearchParams({ url: url.trim() });
+      Object.entries(reviewerContext).forEach(([key, value]) => {
+        if (value !== "" && value !== false) params.set(key, String(value));
+      });
+      const response = await fetch(`/api/scan?${params.toString()}`);
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Scan failed.");
       setReport(payload);
+      setVendorProfiles((profiles) => upsertVendorProfile(profiles, payload));
       setSelectedFinding(null);
     } catch (scanError) {
       setError(scanError.message);
@@ -221,6 +251,39 @@ function App() {
     URL.revokeObjectURL(href);
   }
 
+  async function downloadPdf() {
+    if (!report) return;
+    const response = await fetch("/api/report/pdf", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ report })
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      setError(payload.error || "Unable to generate PDF.");
+      return;
+    }
+    const blob = await response.blob();
+    const href = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = href;
+    anchor.download = `privacy-report-${new URL(report.finalUrl).hostname}.pdf`;
+    anchor.click();
+    URL.revokeObjectURL(href);
+  }
+
+  function updateReviewerContext(key, value) {
+    setReviewerContext((current) => ({ ...current, [key]: value }));
+  }
+
+  function pinForComparison() {
+    if (!report) return;
+    setComparisonReports((current) => {
+      const next = [comparisonSummary(report), ...current.filter((item) => item.finalUrl !== report.finalUrl)];
+      return next.slice(0, 3);
+    });
+  }
+
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -238,6 +301,9 @@ function App() {
           </a>
           <button className="icon-button" onClick={() => window.print()} title="Print report" disabled={!report}>
             <Printer size={18} />
+          </button>
+          <button className="icon-button" onClick={downloadPdf} title="Download PDF report" disabled={!report}>
+            <FileDown size={18} />
           </button>
           <button className="icon-button" onClick={downloadReport} title="Download JSON report" disabled={!report}>
             <Download size={18} />
@@ -265,6 +331,8 @@ function App() {
             </button>
             {error && <p className="error-text">{error}</p>}
           </form>
+
+          <ReviewerWorkflow context={reviewerContext} onChange={updateReviewerContext} />
 
           <div className="checklist">
             <h2>Review Scope</h2>
@@ -301,6 +369,8 @@ function App() {
             <RiskBadge risk={report.summary.risk} score={report.summary.score} />
           </div>
 
+          <PlainVerdict verdict={report.plainVerdict} onPin={pinForComparison} onPdf={downloadPdf} />
+
           <div className="metric-grid">
             {report.categories.map((item) => (
               <article className="metric" key={item.label}>
@@ -335,6 +405,14 @@ function App() {
             <EvaluationChecks checks={report.evaluationChecks || []} />
           </section>
 
+          <section className="report-section evaluation-section">
+            <div className="section-title">
+              <ClipboardCheck size={18} />
+              <h2>Approval Checklist</h2>
+            </div>
+            <ApprovalChecklist items={report.approvalChecklist || []} />
+          </section>
+
           <section className="report-section">
             <div className="section-title">
               <FileText size={18} />
@@ -343,6 +421,7 @@ function App() {
             <div className="findings-table">
               <div className="table-row table-head">
                 <span>Severity</span>
+                <span>Confidence</span>
                 <span>Area</span>
                 <span>Evidence</span>
                 <span>Conclusion</span>
@@ -350,6 +429,7 @@ function App() {
               {report.findings.map((finding, index) => (
                 <button className="table-row clickable-row" key={`${finding.area}-${index}`} onClick={() => setSelectedFinding(finding)}>
                   <span data-label="Severity"><Severity value={finding.severity} /></span>
+                  <span data-label="Confidence"><Confidence value={finding.confidence} /></span>
                   <span data-label="Area">{finding.area}</span>
                   <span data-label="Evidence">{finding.evidence}</span>
                   <span data-label="Conclusion">{finding.action}</span>
@@ -391,6 +471,19 @@ function App() {
           <section className="report-section aipc-section">
             <div className="section-title">
               <FileText size={18} />
+              <h2>Policy Quote Snippets</h2>
+            </div>
+            <PolicySnippets items={report.policyExcerpts || []} />
+          </section>
+
+          <section className="split-sections">
+            <VendorProfile profile={report.vendorProfile} history={vendorProfiles} />
+            <ComparisonPanel reports={comparisonReports} onClear={() => setComparisonReports([])} />
+          </section>
+
+          <section className="report-section aipc-section">
+            <div className="section-title">
+              <FileText size={18} />
               <h2>Summarized Email Explanation</h2>
             </div>
             <TeacherNotification notification={report.teacherNotification} />
@@ -418,6 +511,60 @@ function ScopeItem({ icon, label }) {
   );
 }
 
+function ReviewerWorkflow({ context, onChange }) {
+  return (
+    <div className="reviewer-panel">
+      <h2>Reviewer Workflow</h2>
+      <input value={context.reviewerName} onChange={(event) => onChange("reviewerName", event.target.value)} placeholder="Reviewer name" />
+      <input value={context.district} onChange={(event) => onChange("district", event.target.value)} placeholder="School or district" />
+      <input value={context.gradeBand} onChange={(event) => onChange("gradeBand", event.target.value)} placeholder="Grade band" />
+      <textarea value={context.intendedUse} onChange={(event) => onChange("intendedUse", event.target.value)} placeholder="Intended classroom use" rows={3} />
+      <label>
+        Student login
+        <select value={context.studentLogin} onChange={(event) => onChange("studentLogin", event.target.value)}>
+          <option value="unknown">Unknown</option>
+          <option value="no">No</option>
+          <option value="yes">Yes</option>
+        </select>
+      </label>
+      <label>
+        Students enter data
+        <select value={context.studentDataEntered} onChange={(event) => onChange("studentDataEntered", event.target.value)}>
+          <option value="unknown">Unknown</option>
+          <option value="no">No</option>
+          <option value="yes">Yes</option>
+        </select>
+      </label>
+      <label className="checkbox-row">
+        <input type="checkbox" checked={context.dpaOnFile} onChange={(event) => onChange("dpaOnFile", event.target.checked)} />
+        District agreement/DPA on file
+      </label>
+      <textarea value={context.reviewerNotes} onChange={(event) => onChange("reviewerNotes", event.target.value)} placeholder="Reviewer notes" rows={3} />
+    </div>
+  );
+}
+
+function PlainVerdict({ verdict, onPin, onPdf }) {
+  if (!verdict) return null;
+
+  return (
+    <section className={`plain-verdict verdict-${verdict.decision.toLowerCase().replace(/\s+/g, "-")}`}>
+      <div>
+        <span>Plain-language verdict</span>
+        <strong>{verdict.decision}</strong>
+        <p>{verdict.nextStep}</p>
+      </div>
+      <ul>
+        {verdict.reasons.slice(0, 3).map((reason) => <li key={reason}>{reason}</li>)}
+      </ul>
+      <div className="verdict-actions">
+        <button className="secondary-button" onClick={onPin}>Pin for Comparison</button>
+        <button className="secondary-button" onClick={onPdf}>Download PDF</button>
+      </div>
+    </section>
+  );
+}
+
 function RiskBadge({ risk, score }) {
   return (
     <div className={`risk-badge risk-${risk.toLowerCase()}`}>
@@ -430,6 +577,26 @@ function RiskBadge({ risk, score }) {
 
 function Severity({ value }) {
   return <b className={`severity severity-${value.toLowerCase()}`}>{value}</b>;
+}
+
+function Confidence({ value = "Detected" }) {
+  return <b className={`confidence confidence-${value.toLowerCase().replace(/\s+/g, "-")}`}>{value}</b>;
+}
+
+function ApprovalChecklist({ items }) {
+  if (!items.length) return <p className="aipc-text">No approval checklist was returned.</p>;
+
+  return (
+    <div className="approval-grid">
+      {items.map((item) => (
+        <article className={`approval-item approval-${item.status}`} key={item.label}>
+          <span>{item.status}</span>
+          <strong>{item.label}</strong>
+          <p>{item.detail}</p>
+        </article>
+      ))}
+    </div>
+  );
 }
 
 function DomainList({ title, items }) {
@@ -547,6 +714,71 @@ function TeacherNotification({ notification }) {
   );
 }
 
+function PolicySnippets({ items }) {
+  if (!items.length) return <p className="aipc-text">No policy quote snippets were captured from public pages.</p>;
+
+  return (
+    <div className="snippet-list">
+      {items.slice(0, 8).map((item, index) => (
+        <article key={`${item.label}-${index}`}>
+          <strong>{item.label}</strong>
+          <p>{item.excerpt}</p>
+          {item.pages?.[0] && <a href={item.pages[0]} target="_blank" rel="noreferrer">{item.pages[0]}</a>}
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function VendorProfile({ profile, history }) {
+  if (!profile) return null;
+  const related = history.filter((item) => item.domain === profile.domain);
+
+  return (
+    <section className="report-section">
+      <div className="section-title">
+        <Network size={18} />
+        <h2>Known Vendor Profile</h2>
+      </div>
+      <div className="vendor-profile">
+        <strong>{profile.domain}</strong>
+        <span>{related.length} local scan record(s)</span>
+        <span>Current score: {profile.currentScore}/100 · {profile.currentRisk} risk</span>
+        <span>Advertisers: {profile.detectedAdvertisers.length ? profile.detectedAdvertisers.join(", ") : "none detected"}</span>
+        <span>Processors: {profile.detectedProcessors.length ? profile.detectedProcessors.join(", ") : "none detected"}</span>
+      </div>
+    </section>
+  );
+}
+
+function ComparisonPanel({ reports, onClear }) {
+  return (
+    <section className="report-section">
+      <div className="section-title comparison-title">
+        <CheckCircle2 size={18} />
+        <h2>Comparison</h2>
+        <button className="icon-button" onClick={onClear} title="Clear comparison" disabled={!reports.length}>
+          <Trash2 size={16} />
+        </button>
+      </div>
+      {reports.length ? (
+        <div className="comparison-grid">
+          {reports.map((item) => (
+            <article key={item.finalUrl}>
+              <strong>{item.title}</strong>
+              <span>{item.decision}</span>
+              <em>{item.score}/100</em>
+              <p>{item.finalUrl}</p>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <p className="aipc-text">Pin up to three reports to compare tools side-by-side.</p>
+      )}
+    </section>
+  );
+}
+
 function EvidenceBlock({ title, items, empty = "No signal detected" }) {
   return (
     <div className="evidence-block">
@@ -587,6 +819,8 @@ function FindingDrilldown({ finding, report, onClose }) {
           <button className="icon-button" onClick={onClose} title="Close details">×</button>
         </div>
         <div className="drilldown-body">
+          <DetailLine label="Confidence" value={finding.confidence || "Detected"} />
+          <DetailLine label="Why this matters" value={finding.why || "This finding helps reviewers decide whether the tool needs agreement, policy, or technical review."} />
           <DetailLine label="Evidence" value={finding.evidence} />
           <DetailLine label="Conclusion" value={finding.action} />
           <div className="drilldown-list">
@@ -638,6 +872,37 @@ function drilldownDetails(finding, report) {
     ...(report.thirdParties?.other || []).map((item) => `${item.domain} · ${item.host} · ${item.sampleUrl}`),
     ...(report.storageSignals || []).map((item) => item.label)
   ];
+}
+
+function loadStoredArray(key) {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key) || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function comparisonSummary(report) {
+  return {
+    title: report.pageTitle,
+    finalUrl: report.finalUrl,
+    decision: report.plainVerdict?.decision || report.highLevelSummary?.decision || "Needs review",
+    score: report.summary?.score || report.highLevelSummary?.score || 0,
+    domain: report.vendorProfile?.domain || new URL(report.finalUrl).hostname
+  };
+}
+
+function upsertVendorProfile(profiles, report) {
+  const summary = comparisonSummary(report);
+  const profile = {
+    ...summary,
+    scannedAt: report.scannedAt,
+    risk: report.summary?.risk,
+    advertisers: report.thirdParties?.advertisers?.map((item) => item.domain) || [],
+    processors: report.thirdParties?.processors?.map((item) => item.domain) || []
+  };
+  return [profile, ...profiles.filter((item) => item.finalUrl !== report.finalUrl)].slice(0, 20);
 }
 
 createRoot(document.getElementById("root")).render(<App />);

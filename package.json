@@ -9,14 +9,16 @@
     "start": "NODE_ENV=production node server/index.js"
   },
   "dependencies": {
-    "@vitejs/plugin-react": "^5.1.1",
     "cheerio": "^1.1.2",
     "express": "^5.2.1",
     "lucide-react": "^0.468.0",
+    "pdfkit": "^0.19.1",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
-    "tldts": "^7.0.21",
-    "vite": "^7.2.7"
+    "tldts": "^7.0.21"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.0.2",
+    "vite": "^8.0.16"
+  }
 }

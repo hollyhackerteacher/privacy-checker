@@ -1,9 +1,9 @@
 import express from "express";
-import { createServer as createViteServer } from "vite";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { load } from "cheerio";
 import { getDomain } from "tldts";
+import PDFDocument from "pdfkit";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
@@ -11,6 +11,8 @@ const app = express();
 const port = process.env.PORT || 5173;
 const PAGE_LIMIT = Number(process.env.SCAN_PAGE_LIMIT || 6);
 const PAGE_TIMEOUT_MS = Number(process.env.SCAN_PAGE_TIMEOUT_MS || 15000);
+
+app.use(express.json({ limit: "2mb" }));
 
 const AD_PATTERNS = [
   "doubleclick.net",
@@ -92,7 +94,7 @@ app.get("/api/scan", async (req, res) => {
     const candidates = normalizeUrlCandidates(req.query.url);
     const startedAt = new Date().toISOString();
     const { targetUrl, scan } = await scanFirstReachable(candidates);
-    const report = await buildReport({ targetUrl, startedAt, scan });
+    const report = await buildReport({ targetUrl, startedAt, scan, reviewerContext: parseReviewerContext(req.query) });
     res.json(report);
   } catch (error) {
     const message =
@@ -103,10 +105,31 @@ app.get("/api/scan", async (req, res) => {
   }
 });
 
+app.post("/api/report/pdf", async (req, res) => {
+  try {
+    const report = req.body?.report;
+    if (!report || !report.pageTitle || !report.finalUrl) {
+      res.status(400).json({ error: "A completed report is required." });
+      return;
+    }
+
+    const fileName = `privacy-report-${safeFilePart(new URL(report.finalUrl).hostname)}.pdf`;
+    res.setHeader("content-type", "application/pdf");
+    res.setHeader("content-disposition", `attachment; filename="${fileName}"`);
+    const doc = new PDFDocument({ margin: 42, size: "LETTER" });
+    doc.pipe(res);
+    renderPdfReport(doc, report);
+    doc.end();
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Unable to generate PDF." });
+  }
+});
+
 if (process.env.NODE_ENV === "production") {
   app.use(express.static(path.join(root, "dist")));
   app.get(/.*/, (_req, res) => res.sendFile(path.join(root, "dist/index.html")));
 } else {
+  const { createServer: createViteServer } = await import("vite");
   const vite = await createViteServer({
     root,
     server: { middlewareMode: true },
@@ -149,6 +172,23 @@ function normalizeUrlCandidates(rawUrl) {
   }
 
   return [...new Set(candidates)].map((url) => new URL(url));
+}
+
+function parseReviewerContext(query) {
+  return {
+    reviewerName: cleanQueryValue(query.reviewerName),
+    district: cleanQueryValue(query.district),
+    intendedUse: cleanQueryValue(query.intendedUse),
+    gradeBand: cleanQueryValue(query.gradeBand),
+    studentLogin: cleanQueryValue(query.studentLogin),
+    studentDataEntered: cleanQueryValue(query.studentDataEntered),
+    dpaOnFile: query.dpaOnFile === "true",
+    reviewerNotes: cleanQueryValue(query.reviewerNotes)
+  };
+}
+
+function cleanQueryValue(value) {
+  return typeof value === "string" ? value.trim().slice(0, 300) : "";
 }
 
 async function scanFirstReachable(candidates) {
@@ -250,7 +290,7 @@ function analyzePage(page) {
   };
 }
 
-async function buildReport({ targetUrl, startedAt, scan }) {
+async function buildReport({ targetUrl, startedAt, scan, reviewerContext = {} }) {
   const finalUrl = new URL(scan.finalUrl);
   const pages = scan.pages;
   const firstPage = pages[0];
@@ -265,10 +305,15 @@ async function buildReport({ targetUrl, startedAt, scan }) {
   const pagesScanned = pages.map(({ url, status, title, error }) => ({ url, status, title, error }));
   const firstPartyDomain = scan.firstPartyDomain;
   const thirdParties = classifyThirdParties(resourceUrls, firstPartyDomain);
-  const scores = scoreFindings({ thirdParties, cookieHeaders, storageSignals, privacyLinks, forms, policySignals, securityHeaders });
-  const findings = buildFindings({ thirdParties, cookieHeaders, storageSignals, privacyLinks, forms, policySignals, securityHeaders, pagesScanned });
+  const baseScores = scoreFindings({ thirdParties, cookieHeaders, storageSignals, privacyLinks, forms, policySignals, securityHeaders });
+  const scores = applyReviewerScoreAdjustments(baseScores, reviewerContext);
+  const findings = addFindingMetadata(buildFindings({ thirdParties, cookieHeaders, storageSignals, privacyLinks, forms, policySignals, securityHeaders, pagesScanned }));
   const evaluationChecks = buildEvaluationChecks({ thirdParties, cookieHeaders, storageSignals, privacyLinks, forms, loginSignals, policySignals, securityHeaders, pagesScanned });
-  const highLevelSummary = buildHighLevelSummary({ scores, thirdParties, cookieHeaders, storageSignals, privacyLinks, forms, policySignals, securityHeaders, evaluationChecks });
+  const highLevelSummary = buildHighLevelSummary({ scores, thirdParties, cookieHeaders, storageSignals, privacyLinks, forms, policySignals, securityHeaders, evaluationChecks, reviewerContext });
+  const approvalChecklist = buildApprovalChecklist({ thirdParties, cookieHeaders, privacyLinks, forms, policySignals, securityHeaders, reviewerContext });
+  const plainVerdict = buildPlainVerdict(highLevelSummary);
+  const policyExcerpts = buildPolicyExcerpts(policySignals);
+  const vendorProfile = buildVendorProfile({ finalUrl, scores, thirdParties, policySignals });
 
   const report = {
     scannedAt: startedAt,
@@ -276,6 +321,8 @@ async function buildReport({ targetUrl, startedAt, scan }) {
     finalUrl: finalUrl.href,
     httpStatus: firstPage.status,
     pageTitle: firstPage.title,
+    reviewerContext,
+    plainVerdict,
     summary: {
       risk: scores.risk,
       score: scores.score,
@@ -304,13 +351,16 @@ async function buildReport({ targetUrl, startedAt, scan }) {
     forms,
     loginSignals,
     policySignals,
+    policyExcerpts,
     securityHeaders,
+    approvalChecklist,
     evaluationChecks,
     highLevelSummary,
     findings,
     utahReview: buildUtahNotes({ thirdParties, cookieHeaders, storageSignals, privacyLinks, forms, policySignals }),
     ferpaConsiderations: buildFerpaConsiderations({ thirdParties, forms, policySignals }),
     references: UTAH_REFERENCES,
+    vendorProfile,
     limitations: [
       `This is a bounded public scan of up to ${scan.pageLimit} public pages.`,
       "It does not log in, accept consent banners, submit forms, run classroom workflows, or confirm legal compliance.",
@@ -593,7 +643,15 @@ function detectPolicySignals(text) {
 
   return checks
     .filter(([, , pattern]) => pattern.test(normalized))
-    .map(([key, label]) => ({ key, label }));
+    .map(([key, label, pattern]) => ({ key, label, excerpt: excerptForPattern(normalized, pattern) }));
+}
+
+function excerptForPattern(text, pattern) {
+  const match = text.match(pattern);
+  if (match?.index == null) return "";
+  const start = Math.max(0, match.index - 90);
+  const end = Math.min(text.length, match.index + match[0].length + 140);
+  return text.slice(start, end).replace(/\s+/g, " ").trim();
 }
 
 function summarizePolicySignals(pages) {
@@ -603,6 +661,9 @@ function summarizePolicySignals(pages) {
     for (const signal of page.policySignals) {
       if (!byKey.has(signal.key)) byKey.set(signal.key, { ...signal, pages: [] });
       byKey.get(signal.key).pages.push(page.url);
+      if (signal.excerpt) {
+        byKey.get(signal.key).excerpts = [...new Set([...(byKey.get(signal.key).excerpts || []), signal.excerpt])].slice(0, 3);
+      }
     }
   }
 
@@ -649,6 +710,15 @@ function scoreFindings({ thirdParties, cookieHeaders, storageSignals, privacyLin
 
   const risk = score >= 82 ? "Low" : score >= 60 ? "Moderate" : "High";
   return { score, risk };
+}
+
+function applyReviewerScoreAdjustments(scores, reviewerContext) {
+  let score = scores.score;
+  if (reviewerContext.dpaOnFile) score += 8;
+  if (reviewerContext.studentLogin === "yes") score -= 5;
+  if (reviewerContext.studentDataEntered === "yes") score -= 8;
+  score = Math.max(0, Math.min(100, score));
+  return { score, risk: score >= 82 ? "Low" : score >= 60 ? "Moderate" : "High" };
 }
 
 function category(label, count, status) {
@@ -758,6 +828,32 @@ function buildFindings({ thirdParties, cookieHeaders, storageSignals, privacyLin
   ];
 }
 
+function addFindingMetadata(findings) {
+  return findings.map((finding) => ({
+    ...finding,
+    confidence: finding.confidence || inferFindingConfidence(finding),
+    why: finding.why || whyFindingMatters(finding.area)
+  }));
+}
+
+function inferFindingConfidence(finding) {
+  const area = finding.area.toLowerCase();
+  if (area.includes("documentation") && /no privacy|no .*policy/i.test(finding.evidence)) return "Not found publicly";
+  if (area.includes("policy") || area.includes("form")) return "Inferred";
+  return "Detected";
+}
+
+function whyFindingMatters(area) {
+  const key = area.toLowerCase();
+  if (key.includes("advertising")) return "Utah K-12 review should treat advertising trackers as a blocker unless agreement terms prohibit targeted advertising, profiling, sale/share, and secondary use of student data.";
+  if (key.includes("cookie")) return "Cookies can identify a student, device, or browser session and should be limited to the educational purpose.";
+  if (key.includes("processor")) return "Third-party processors should be listed or covered by a vendor agreement or DPA before student use.";
+  if (key.includes("form")) return "Student, parent, account, or contact fields can create FERPA and Utah student-data obligations.";
+  if (key.includes("policy")) return "Public policy language often reveals whether student data, advertising, retention, deletion, AI use, or subprocessors need contract review.";
+  if (key.includes("security")) return "Security headers are not the full security review, but missing baseline controls lowers technical confidence.";
+  return "This signal helps reviewers understand the limits of a public scan before making a classroom-use decision.";
+}
+
 function buildEvaluationChecks({ thirdParties, cookieHeaders, storageSignals, privacyLinks, forms, loginSignals, policySignals, securityHeaders, pagesScanned }) {
   const cookies = cookieHeaders.map((header) => parseCookieHeader(header));
   const adCookies = cookies.filter((cookie) => cookie.purpose === "Advertising / analytics");
@@ -788,6 +884,28 @@ function evaluationCheck(label, status, evidence, conclusion) {
   return { label, status, evidence, conclusion };
 }
 
+function buildApprovalChecklist({ thirdParties, cookieHeaders, privacyLinks, forms, policySignals, securityHeaders, reviewerContext }) {
+  const policy = new Set(policySignals.map((signal) => signal.key));
+  const cookies = cookieHeaders.map((header) => parseCookieHeader(header));
+  const adCookies = cookies.filter((cookie) => cookie.purpose === "Advertising / analytics");
+  const sensitiveForms = forms.filter((form) => form.sensitiveFieldCount > 0);
+
+  return [
+    checklistItem("District agreement / DPA", reviewerContext.dpaOnFile ? "pass" : "review", reviewerContext.dpaOnFile ? "Reviewer marked agreement on file." : "No agreement was marked on file."),
+    checklistItem("FERPA educational-purpose limits", policy.has("ferpa") || policy.has("dpa") || reviewerContext.dpaOnFile ? "review" : "review", "Confirm school control, educational purpose, no redisclosure, and deletion/return terms."),
+    checklistItem("Targeted advertising blocked", thirdParties.advertisers.length || adCookies.length || policy.has("targetedAdvertising") ? "blocker" : "pass", thirdParties.advertisers.length ? `Ad-tech detected: ${thirdParties.advertisers.map((item) => item.domain).join(", ")}` : "No advertising tracker signal detected."),
+    checklistItem("Student data collection understood", sensitiveForms.length || reviewerContext.studentDataEntered === "yes" ? "review" : "pass", sensitiveForms.length ? `${sensitiveForms.length} public form(s) may collect sensitive data.` : "No sensitive public form signal detected."),
+    checklistItem("Retention and deletion terms", policy.has("retention") ? "review" : "review", policy.has("retention") ? "Retention/deletion language detected." : "No retention/deletion language found publicly."),
+    checklistItem("Subprocessors covered", thirdParties.processors.length ? "review" : "pass", thirdParties.processors.length ? thirdParties.processors.map((item) => item.domain).join(", ") : "No third-party processor signal detected."),
+    checklistItem("Breach/security terms", policy.has("breach") || securityHeaders.strictTransportSecurity ? "review" : "review", policy.has("breach") ? "Breach language detected." : "Confirm breach notification and security duties in agreement."),
+    checklistItem("Public privacy documentation", privacyLinks.length ? "pass" : "blocker", privacyLinks.length ? `${privacyLinks.length} policy/terms link(s) found.` : "No public privacy or student-data policy link detected.")
+  ];
+}
+
+function checklistItem(label, status, detail) {
+  return { label, status, detail };
+}
+
 function matchingPolicyLabels(policySignals, keys) {
   return policySignals
     .filter((signal) => keys.includes(signal.key))
@@ -795,7 +913,7 @@ function matchingPolicyLabels(policySignals, keys) {
     .join(", ");
 }
 
-function buildHighLevelSummary({ scores, thirdParties, cookieHeaders, storageSignals, privacyLinks, forms, policySignals, securityHeaders, evaluationChecks }) {
+function buildHighLevelSummary({ scores, thirdParties, cookieHeaders, storageSignals, privacyLinks, forms, policySignals, securityHeaders, evaluationChecks, reviewerContext }) {
   const cookies = cookieHeaders.map((header) => parseCookieHeader(header));
   const adCookies = cookies.filter((cookie) => cookie.purpose === "Advertising / analytics");
   const sensitiveForms = forms.filter((form) => form.sensitiveFieldCount > 0);
@@ -871,7 +989,19 @@ function buildHighLevelSummary({ scores, thirdParties, cookieHeaders, storageSig
     concerning.push("One or more baseline browser security headers were missing.");
   }
 
-  const decision = decideApproval({ scores, likelyViolationWithoutAgreement, requiresDetailedReview });
+  if (reviewerContext.studentLogin === "yes") {
+    requiresDetailedReview.push("Reviewer indicated students log in. Login-only student data flows should be reviewed separately from the public scan.");
+  }
+
+  if (reviewerContext.studentDataEntered === "yes") {
+    requiresDetailedReview.push("Reviewer indicated students enter data. Confirm exact student data elements, retention, deletion, and DPA terms before approval.");
+  }
+
+  if (reviewerContext.dpaOnFile) {
+    concerning.push("Reviewer marked a district agreement/DPA as on file. This may resolve some agreement-dependent concerns, but it does not erase observed advertising, policy, or security signals.");
+  }
+
+  const decision = decideApproval({ scores, likelyViolationWithoutAgreement, requiresDetailedReview, reviewerContext });
 
   return {
     rating: decision.rating,
@@ -884,11 +1014,21 @@ function buildHighLevelSummary({ scores, thirdParties, cookieHeaders, storageSig
   };
 }
 
-function decideApproval({ scores, likelyViolationWithoutAgreement, requiresDetailedReview }) {
+function decideApproval({ scores, likelyViolationWithoutAgreement, requiresDetailedReview, reviewerContext }) {
+  const agreementMitigates = reviewerContext.dpaOnFile && likelyViolationWithoutAgreement.length;
+  if (agreementMitigates && scores.score >= 60) {
+    return {
+      rating: "Agreement review required",
+      decision: "Needs review",
+      summary:
+        "The reviewer marked an agreement or DPA as on file. The site still has public signals that must be compared against that agreement before approval."
+    };
+  }
+
   if (likelyViolationWithoutAgreement.length) {
     return {
       rating: "Not approved baseline",
-      decision: "Deny until agreement fixes concerns",
+      decision: "Deny",
       summary:
         "The scan found advertising, policy, or missing-documentation signals that should block classroom use unless a district-approved agreement resolves them."
     };
@@ -897,7 +1037,7 @@ function decideApproval({ scores, likelyViolationWithoutAgreement, requiresDetai
   if (scores.score < 60) {
     return {
       rating: "High risk",
-      decision: "Do not approve",
+      decision: "Deny",
       summary: "The site has multiple technical or documentation issues that make it unsuitable for student use at this stage."
     };
   }
@@ -905,17 +1045,38 @@ function decideApproval({ scores, likelyViolationWithoutAgreement, requiresDetai
   if (requiresDetailedReview.length || scores.score < 82) {
     return {
       rating: "Review required",
-      decision: "Hold for detailed review",
+      decision: "Needs review",
       summary:
         "The scan did not prove a denial-level advertising issue, but it found data collection, processor, policy, or contract questions that require review before approval."
     };
   }
 
   return {
-    rating: "Low risk baseline",
-    decision: "Approval likely",
+      rating: "Low risk baseline",
+      decision: "Approved",
     summary:
       "The public scan did not detect advertising trackers, sensitive public forms, or missing core documentation signals. Final approval still depends on district agreement requirements."
+  };
+}
+
+function buildPlainVerdict(summary) {
+  const reasons = [
+    ...summary.likelyViolationWithoutAgreement,
+    ...summary.requiresDetailedReview,
+    ...summary.concerning
+  ].slice(0, 3);
+
+  return {
+    decision: summary.decision,
+    rating: summary.rating,
+    score: summary.score,
+    reasons: reasons.length ? reasons : ["No denial-level public scan signals were detected."],
+    nextStep:
+      summary.decision === "Approved"
+        ? "Attach the report to the district record and confirm any required agreement is current."
+        : summary.decision === "Deny"
+          ? "Do not approve for classroom use until the vendor agreement or documentation resolves the blocker."
+          : "Compare the public findings against the DPA, privacy policy, intended use, and student data elements."
   };
 }
 
@@ -983,6 +1144,102 @@ function buildFerpaConsiderations({ thirdParties, forms, policySignals }) {
   ];
 }
 
+function buildPolicyExcerpts(policySignals) {
+  return policySignals.flatMap((signal) =>
+    (signal.excerpts || []).map((excerpt) => ({
+      label: signal.label,
+      pages: signal.pages || [],
+      excerpt
+    }))
+  ).slice(0, 10);
+}
+
+function buildVendorProfile({ finalUrl, scores, thirdParties, policySignals }) {
+  return {
+    host: finalUrl.hostname,
+    domain: getDomain(finalUrl.hostname) || finalUrl.hostname,
+    currentScore: scores.score,
+    currentRisk: scores.risk,
+    detectedAdvertisers: thirdParties.advertisers.map((item) => item.domain),
+    detectedProcessors: thirdParties.processors.map((item) => item.domain),
+    policySignals: policySignals.map((signal) => signal.label)
+  };
+}
+
+function renderPdfReport(doc, report) {
+  const summary = report.highLevelSummary || {};
+  const verdict = report.plainVerdict || {};
+
+  doc.fontSize(18).text("Utah K-12 Privacy Checker Report", { continued: false });
+  doc.moveDown(0.35);
+  doc.fontSize(11).fillColor("#334155").text(report.finalUrl);
+  doc.fillColor("#172321").moveDown();
+
+  pdfSection(doc, "Plain-Language Verdict");
+  pdfLine(doc, "Decision", verdict.decision || summary.decision || "Needs review");
+  pdfLine(doc, "Rating", `${verdict.rating || summary.rating || "Review"} (${verdict.score || summary.score || "n/a"}/100)`);
+  (verdict.reasons || []).slice(0, 3).forEach((reason) => doc.fontSize(10).text(`- ${reason}`));
+  if (verdict.nextStep) doc.fontSize(10).text(`Next step: ${verdict.nextStep}`);
+
+  pdfSection(doc, "Reviewer Context");
+  const context = report.reviewerContext || {};
+  [
+    ["Reviewer", context.reviewerName],
+    ["District", context.district],
+    ["Grade band", context.gradeBand],
+    ["Intended use", context.intendedUse],
+    ["Student login", context.studentLogin],
+    ["Student data entered", context.studentDataEntered],
+    ["DPA on file", context.dpaOnFile ? "Yes" : "No"]
+  ].forEach(([label, value]) => value && pdfLine(doc, label, value));
+
+  pdfSection(doc, "Key Findings");
+  (report.findings || []).slice(0, 8).forEach((finding) => {
+    doc.fontSize(10).fillColor("#172321").text(`${finding.severity} - ${finding.area} (${finding.confidence || "Detected"})`, { continued: false });
+    doc.fillColor("#334155").text(finding.evidence);
+    doc.text(`Why it matters: ${finding.why || finding.action}`);
+    doc.moveDown(0.3);
+  });
+
+  pdfSection(doc, "Approval Checklist");
+  (report.approvalChecklist || []).forEach((item) => {
+    doc.fontSize(10).fillColor("#172321").text(`${item.status.toUpperCase()} - ${item.label}`);
+    doc.fillColor("#334155").text(item.detail);
+  });
+
+  pdfSection(doc, "Policy Snippets");
+  if (report.policyExcerpts?.length) {
+    report.policyExcerpts.slice(0, 6).forEach((item) => {
+      doc.fontSize(10).fillColor("#172321").text(item.label);
+      doc.fillColor("#334155").text(item.excerpt);
+      doc.moveDown(0.3);
+    });
+  } else {
+    doc.fontSize(10).fillColor("#334155").text("No policy snippets were captured from public pages.");
+  }
+
+  pdfSection(doc, "Teacher Notification");
+  doc.fontSize(9).fillColor("#334155").text(report.teacherNotification?.email || "No notification generated.", {
+    width: 520
+  });
+
+}
+
+function pdfSection(doc, title) {
+  doc.moveDown();
+  doc.fontSize(13).fillColor("#0f766e").text(title);
+  doc.moveDown(0.25);
+}
+
+function pdfLine(doc, label, value) {
+  doc.fontSize(10).fillColor("#172321").text(`${label}: `, { continued: true });
+  doc.fillColor("#334155").text(String(value));
+}
+
+function safeFilePart(value) {
+  return value.replace(/[^a-z0-9.-]+/gi, "-").slice(0, 80);
+}
+
 async function createTeacherNotification(report) {
   const endpoint = process.env.AIPC_ENDPOINT || process.env.OLLAMA_BASE_URL;
   if (!endpoint) {
@@ -1044,6 +1301,8 @@ function buildAipcPayload(report) {
     finalUrl: report.finalUrl,
     httpStatus: report.httpStatus,
     pageTitle: report.pageTitle,
+    reviewerContext: report.reviewerContext,
+    plainVerdict: report.plainVerdict,
     summary: report.summary,
     categories: report.categories,
     thirdParties: report.thirdParties,
@@ -1054,12 +1313,15 @@ function buildAipcPayload(report) {
     forms: report.forms,
     loginSignals: report.loginSignals,
     policySignals: report.policySignals,
+    policyExcerpts: report.policyExcerpts,
     securityHeaders: report.securityHeaders,
+    approvalChecklist: report.approvalChecklist,
     evaluationChecks: report.evaluationChecks,
     highLevelSummary: report.highLevelSummary,
     ferpaConsiderations: report.ferpaConsiderations,
     findings: report.findings,
     utahReview: report.utahReview,
+    vendorProfile: report.vendorProfile,
     references: report.references
   };
 }
